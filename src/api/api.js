@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API = axios.create({ baseURL: "http://127.0.0.1:8000" });
+const API = axios.create({ baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8000" });
 
 API.interceptors.request.use(cfg => {
   const token = localStorage.getItem("token");
@@ -79,7 +79,10 @@ export const adminAPI = {
   verifyVendor:       id => API.post(`/admin/vendors/${id}/verify`),
   unverifyVendor:     id => API.post(`/admin/vendors/${id}/unverify`),
   vendorDocuments:    id => API.get(`/admin/vendors/${id}/documents`),
-  downloadDocument:   id => `http://127.0.0.1:8000/admin/documents/${id}/download`,
+  downloadDocument: id => {
+    const token = localStorage.getItem("token");
+    return `${import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"}/admin/documents/${id}/download?token=${token}`;
+  },
   impact:             () => API.get("/admin/impact"),
   esgBreakdown:       () => API.get("/admin/impact/esg-breakdown"),
   stats:              () => API.get("/admin/stats"),
