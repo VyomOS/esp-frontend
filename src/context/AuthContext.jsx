@@ -5,16 +5,16 @@ import { authAPI } from "../api/api";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser]     = useState(null);
+  const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const navigate              = useNavigate();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (token) {
       authAPI.me()
         .then(r => setUser(r.data))
-        .catch(() => localStorage.clear())
+        .catch(() => { localStorage.clear(); navigate("/"); })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
