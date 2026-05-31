@@ -1,8 +1,13 @@
 import axios from "axios";
 
-const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
-});
+const BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+const API = axios.create({ baseURL: BASE });
+
+// Ping backend on load to wake it up (Render free tier sleeps after inactivity)
+if (BASE.includes("onrender.com")) {
+  axios.get(`${BASE}/health`).catch(()=>{});
+}
 
 API.interceptors.request.use(cfg => {
   const token = localStorage.getItem("token");

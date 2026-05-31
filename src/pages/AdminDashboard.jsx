@@ -333,6 +333,7 @@ export default function AdminDashboard() {
     : loc.pathname.includes("impact")               ? "impact"
     : loc.pathname.includes("notify")               ? "notify"
     : loc.pathname.includes("analytics")            ? "analytics"
+    : loc.pathname.includes("team")                 ? "team"
     : "overview";
 
   return (
@@ -583,7 +584,10 @@ function AdminUsers({ toast }) {
   const [roleFilter, setRoleFilter] = useState("");
   const [confirmDeactivate, setConfirmDeactivate] = useState(null);
 
-  const load = () => adminAPI.listUsers().then(r=>setUsers(r.data)).finally(()=>setLoading(false));
+  const load = () => adminAPI.listUsers()
+    .then(r => setUsers(Array.isArray(r.data) ? r.data : []))
+    .catch(err => toast.error(err?.response?.data?.detail || "Failed to load users"))
+    .finally(()=>setLoading(false));
   useEffect(()=>{ load(); },[]);
 
   const activate   = async (u) => { await adminAPI.updateUser(u.id,{is_active:true});  toast.success("User activated");   load(); };
@@ -993,14 +997,14 @@ function AdminAnalytics({ toast }) {
       if (rf.status==="fulfilled") setRfpFunnel(rf.value.data);
       if (ed.status==="fulfilled") setEsgDist(ed.value.data);
       if (au.status==="fulfilled") setAiUsage(au.value.data);
-      if (al.status==="fulfilled") setAuditLog(al.value.data || []);
+      if (al.status==="fulfilled") setAuditLog(al.value.data?.logs || al.value.data || []);
     }).finally(()=>setLoading(false));
   },[]);
 
   const loadAudit = (action="") => {
     setAuditFilter(action);
     adminAPI.auditLog({ action: action||undefined, limit: 30 })
-      .then(r=>setAuditLog(r.data||[])).catch(()=>{});
+      .then(r=>setAuditLog(r.data?.logs || r.data || [])).catch(()=>{});
   };
 
   if (loading) return (
