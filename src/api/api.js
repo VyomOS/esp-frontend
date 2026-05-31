@@ -24,7 +24,7 @@ API.interceptors.response.use(
 export const authAPI = {
   register: data => API.post("/auth/register", data),
   login: data => API.post("/auth/login", { email: data.email, password: data.password }),
-  verifyEmail: token => API.get(`/auth/verify-email?token=${token}`),
+  verifyEmail: token => API.get(`/auth/verify-email?token=${token}`), 
   resendVerification: email => API.post("/auth/resend-verification", { email }),
   forgotPassword: email => API.post("/auth/forgot-password", { email }),
   resetPassword: data => API.post("/auth/reset-password", data),
