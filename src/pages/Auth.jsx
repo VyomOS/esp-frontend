@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { authAPI } from "../api/api";
 import { useAuth } from "../context/AuthContext";
@@ -174,6 +174,10 @@ export function Login() {
   const [lf, setLf]           = useState({ email:"", password:"" });
   const [le, setLe]           = useState({});
   const [ll, setLl]           = useState(false);
+  // resend verification
+  const [resendEmail, setResendEmail]   = useState("");
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSent, setResendSent]     = useState(false);
 
   /* current question */
   const getQ = () => {
@@ -231,6 +235,8 @@ export function Login() {
     if (!lf.password) errs.password = "Required";
     if (Object.keys(errs).length) { setLe(errs); return; }
     setLl(true);
+    setResendEmail("");
+    setResendSent(false);
     try {
       await login(lf.email, lf.password);
       navigate("/dashboard");
@@ -238,8 +244,25 @@ export function Login() {
       const d = err.response?.data?.detail;
       const msg = typeof d === "string" ? d : "Invalid credentials";
       toast.error(msg);
-      setLe({ password: msg });
+      if (msg.toLowerCase().includes("verif")) {
+        setResendEmail(lf.email);
+        setLe({});
+      } else {
+        setLe({ password: msg });
+      }
     } finally { setLl(false); }
+  };
+
+  /* resend verification email */
+  const handleResend = async (email) => {
+    setResendLoading(true);
+    try {
+      await authAPI.resendVerification(email);
+      setResendSent(true);
+      toast.success("Verification email resent — check your inbox!");
+    } catch {
+      toast.error("Could not resend. Try again shortly.");
+    } finally { setResendLoading(false); }
   };
 
   /* ── render ── */
@@ -469,15 +492,26 @@ export function Login() {
                 </svg>
               </div>
               <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:24, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:10 }}>Check your email</h2>
-              <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.75, marginBottom:30 }}>
+              <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.75, marginBottom:24 }}>
                 We sent a verification link to <strong style={{ color:"var(--navy,#0B1D33)" }}>{form.email}</strong>.<br/>Click it to activate your account and get started.
               </p>
               <button onClick={goToLogin}
-                style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"13px 30px", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"background .2s" }}
+                style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"13px 30px", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"background .2s", marginBottom:16 }}
                 onMouseEnter={e=>e.currentTarget.style.background="var(--teal,#18664A)"}
                 onMouseLeave={e=>e.currentTarget.style.background="var(--navy,#0B1D33)"}>
                 Go to sign in →
               </button>
+              <div style={{ fontSize:13, color:"var(--muted,#67788D)" }}>
+                {resendSent
+                  ? <span style={{ color:"var(--teal,#18664A)", fontWeight:600 }}>✓ Email resent — check your inbox</span>
+                  : <>Didn't get it?{" "}
+                      <button onClick={()=>handleResend(form.email)} disabled={resendLoading}
+                        style={{ background:"none", border:"none", cursor:resendLoading?"not-allowed":"pointer", color:"var(--teal,#18664A)", fontWeight:600, fontSize:13, fontFamily:"'DM Sans',sans-serif", padding:0 }}>
+                        {resendLoading ? "Sending…" : "Resend verification email"}
+                      </button>
+                    </>
+                }
+              </div>
             </div>
           </div>
         )}
@@ -492,6 +526,20 @@ export function Login() {
                 <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:8, marginTop:-8 }}>
                   <Link to="/forgot-password" style={{ fontSize:12, color:"var(--teal,#18664A)", textDecoration:"none" }}>Forgot password?</Link>
                 </div>
+                {resendEmail && (
+                  <div style={{ background:"var(--amber-bg,#FDF3E4)", border:"1px solid rgba(184,114,10,.2)", borderRadius:8, padding:"12px 14px", marginBottom:14, fontSize:13, color:"var(--body,#253446)", lineHeight:1.5 }}>
+                    <strong style={{ color:"var(--amber,#B8720A)" }}>Email not verified.</strong> Check your inbox for the link.
+                    <div style={{ marginTop:6 }}>
+                      {resendSent
+                        ? <span style={{ color:"var(--teal,#18664A)", fontWeight:600, fontSize:12 }}>✓ Email resent — check your inbox</span>
+                        : <button type="button" onClick={()=>handleResend(resendEmail)} disabled={resendLoading}
+                            style={{ background:"none", border:"none", cursor:resendLoading?"not-allowed":"pointer", color:"var(--teal,#18664A)", fontWeight:600, fontSize:12, fontFamily:"'DM Sans',sans-serif", padding:0, textDecoration:"underline" }}>
+                            {resendLoading ? "Sending…" : "Resend verification email →"}
+                          </button>
+                      }
+                    </div>
+                  </div>
+                )}
                 <SubmitBtn loading={ll}>Sign in →</SubmitBtn>
               </form>
               <div style={{ textAlign:"center", marginTop:20, fontSize:13, color:"var(--muted,#67788D)" }}>
@@ -637,13 +685,13 @@ export function VerifyEmail() {
   const toast     = useToast();
   const [status, setStatus] = useState("verifying");
 
-  useState(() => {
+  useEffect(() => {
     const token = params.get("token");
     if (!token) { setStatus("error"); return; }
     authAPI.verifyEmail(token)
       .then(() => setStatus("success"))
       .catch(() => setStatus("error"));
-  });
+  }, []);
 
   const map = {
     verifying: { icon:"⏳", title:"Verifying your email…",   body:"Just a moment.",                                              btn:null },

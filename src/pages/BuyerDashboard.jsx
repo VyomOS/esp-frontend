@@ -629,7 +629,9 @@ function BuyerRequests({ toast }) {
 
 /* ─────────────────────────────────── Bid card (module-level) ── */
 function BidCard({ bid, onUpdate }) {
+  const [showContact, setShowContact] = useState(false);
   const color = BID_COLOR[bid.status] || "var(--muted,#67788D)";
+  const hasContact = bid.vendor_email || bid.vendor_phone;
   return (
     <div style={{ background:"white", border:`1.5px solid ${bid.status==="shortlisted"?"var(--teal,#18664A)":bid.status==="awarded"?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, borderRadius:12, padding:"18px 20px" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:10 }}>
@@ -671,6 +673,31 @@ function BidCard({ bid, onUpdate }) {
           <ActionBtn label="✗ Decline" onClick={()=>onUpdate(bid.id,"declined")} color="var(--red,#B84232)" ghost/>
         </div>
       )}
+      {/* Contact details */}
+      {hasContact && (
+        <div style={{ marginTop:10, paddingTop:10, borderTop:"1px solid var(--border,#D4C9B5)" }}>
+          {!showContact
+            ? <button onClick={()=>setShowContact(true)}
+                style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", color:"var(--teal,#18664A)", fontSize:12, fontWeight:600, padding:"6px 14px", borderRadius:6, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                📞 Show contact details
+              </button>
+            : <div style={{ display:"flex", gap:20, flexWrap:"wrap", fontSize:13 }}>
+                {bid.vendor_email && (
+                  <a href={`mailto:${bid.vendor_email}`}
+                    style={{ display:"flex", alignItems:"center", gap:6, color:"var(--navy,#0B1D33)", textDecoration:"none", fontWeight:500 }}>
+                    <span style={{ fontSize:15 }}>✉️</span> {bid.vendor_email}
+                  </a>
+                )}
+                {bid.vendor_phone && (
+                  <a href={`tel:${bid.vendor_phone}`}
+                    style={{ display:"flex", alignItems:"center", gap:6, color:"var(--navy,#0B1D33)", textDecoration:"none", fontWeight:500 }}>
+                    <span style={{ fontSize:15 }}>📞</span> {bid.vendor_phone}
+                  </a>
+                )}
+              </div>
+          }
+        </div>
+      )}
     </div>
   );
 }
@@ -696,6 +723,7 @@ function BuyerVendors({ toast }) {
   const [selected, setSelected]   = useState(null);
   const [detail, setDetail]       = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [showDetailContact, setShowDetailContact] = useState(false);
   const [aiMatch, setAiMatch]     = useState({}); // vendor_id -> match reason
 
   const load = async () => {
@@ -719,7 +747,7 @@ function BuyerVendors({ toast }) {
   useEffect(()=>{ load(); },[]);
 
   const openDetail = async (v) => {
-    setSelected(v); setDetail(null); setDetailLoading(true);
+    setSelected(v); setDetail(null); setDetailLoading(true); setShowDetailContact(false);
     try {
       const id = v.vendor_id||v.id;
       const [p,e,r] = await Promise.allSettled([vendorAPI.getVendor(id), vendorAPI.getESG(id), buyerAPI.getRating(id)]);
@@ -790,7 +818,7 @@ function BuyerVendors({ toast }) {
       }
 
       {/* Vendor detail modal */}
-      <Modal open={!!selected} onClose={()=>{setSelected(null);setDetail(null);}} title="Vendor profile" width={580}>
+      <Modal open={!!selected} onClose={()=>{setSelected(null);setDetail(null);setShowDetailContact(false);}} title="Vendor profile" width={580}>
         {detailLoading
           ? <div style={{ textAlign:"center", padding:"40px" }}><span className="spinner" style={{width:32,height:32}}/></div>
           : detail ? (
@@ -833,6 +861,32 @@ function BuyerVendors({ toast }) {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {/* Contact details */}
+              {(detail.profile?.phone || detail.profile?.email) && (
+                <div style={{ borderTop:"1px solid var(--border,#D4C9B5)", paddingTop:16 }}>
+                  {!showDetailContact
+                    ? <button onClick={()=>setShowDetailContact(true)}
+                        style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", color:"var(--teal,#18664A)", fontSize:13, fontWeight:600, padding:"10px 20px", borderRadius:6, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", width:"100%" }}>
+                        📞 Show contact details
+                      </button>
+                    : <div style={{ background:"var(--cream,#F2EBD9)", borderRadius:10, padding:"14px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+                        <div style={{ fontSize:11, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:2 }}>Contact</div>
+                        {detail.profile.email && (
+                          <a href={`mailto:${detail.profile.email}`}
+                            style={{ display:"flex", alignItems:"center", gap:10, color:"var(--navy,#0B1D33)", textDecoration:"none", fontSize:14, fontWeight:500 }}>
+                            <span style={{ fontSize:18 }}>✉️</span> {detail.profile.email}
+                          </a>
+                        )}
+                        {detail.profile.phone && (
+                          <a href={`tel:${detail.profile.phone}`}
+                            style={{ display:"flex", alignItems:"center", gap:10, color:"var(--navy,#0B1D33)", textDecoration:"none", fontSize:14, fontWeight:500 }}>
+                            <span style={{ fontSize:18 }}>📞</span> {detail.profile.phone}
+                          </a>
+                        )}
+                      </div>
+                  }
                 </div>
               )}
             </div>
