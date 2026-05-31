@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import { vendorAPI, buyerAPI, bidAPI, chatAPI, notificationAPI } from "../api/api";
 import { useToast } from "../context/ToastContext";
@@ -25,6 +25,20 @@ const TURNOVER    = ["Less than ₹10L","₹10L – ₹1Cr","₹1Cr – ₹10Cr"
 const TURNOVER_V  = ["<10L","10L-1Cr","1Cr-10Cr","10Cr+"];
 
 /* ─────────────────────────────────── helpers ── */
+function fixNotifLink(link, category) {
+  // Backend sends internal paths that may differ from frontend routes
+  const map = {
+    "/dashboard/my-bids":     "/dashboard/opportunities",
+    "/dashboard/my-requests": "/dashboard/requests",
+    "/dashboard/documents":   "/dashboard/profile",
+  };
+  const resolved = link ? (map[link] || link) : null;
+  if (resolved) return resolved;
+  if (category === "bid")     return "/dashboard/opportunities";
+  if (category === "profile") return "/dashboard/profile";
+  return null;
+}
+
 function parseJSON(val, fallback = []) {
   if (Array.isArray(val)) return val;
   try { return JSON.parse(val || "[]"); } catch { return fallback; }
@@ -135,17 +149,25 @@ function OnboardingWizard({ onComplete, onSkip }) {
   const save = async () => {
     if (!form.organization_name.trim()) { toast.error("Enter your organisation name"); return; }
     setSaving(true);
+    const payload = {
+      organization_name: form.organization_name,
+      location: form.location,
+      description: form.description,
+      team_size_band: form.team_size_band,
+      service_categories: toJSON(cats),
+      is_women_owned: womenLed === true,
+      certification_types: toJSON([]),
+      sdg_tags: toJSON([]),
+    };
     try {
-      await vendorAPI.createProfile({
-        organization_name: form.organization_name,
-        location: form.location,
-        description: form.description,
-        team_size_band: form.team_size_band,
-        service_categories: toJSON(cats),
-        is_women_owned: womenLed === true,
-        certification_types: toJSON([]),
-        sdg_tags: toJSON([]),
-      });
+      try {
+        await vendorAPI.createProfile(payload);
+      } catch (createErr) {
+        // Profile already exists (400) — update instead
+        if (createErr.response?.status === 400) {
+          await vendorAPI.updateProfile(payload);
+        } else { throw createErr; }
+      }
       toast.success("Profile created! Welcome aboard.");
       onComplete();
     } catch (err) {
@@ -295,14 +317,17 @@ export default function VendorDashboard() {
   const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   useEffect(()=>{
-    if (localStorage.getItem("onboarding_done")) { setOnboardingChecked(true); return; }
-    Promise.all([vendorAPI.getMyProfile(), vendorAPI.completeness()])
-      .then(([p, c]) => {
-        const score = c.data?.score || 0;
-        if (score < 30) setShowOnboarding(true);
-        else setOnboardingChecked(true);
+    vendorAPI.getMyProfile()
+      .then(p => {
+        if (p.data?.organization_name) {
+          // Profile already exists — skip onboarding regardless of localStorage state
+          localStorage.setItem("onboarding_done","1");
+          setOnboardingChecked(true);
+        } else {
+          setShowOnboarding(true);
+        }
       })
-      .catch(() => setShowOnboarding(true));
+      .catch(() => setShowOnboarding(true)); // 404 = no profile yet → show wizard
   }, []);
 
   const handleOnboardingComplete = () => {
@@ -419,9 +444,36 @@ function VendorHome({ toast, nav }) {
         <div style={{ position:"absolute", right:-60, top:-60, width:240, height:240, borderRadius:"50%", border:"1px solid rgba(255,255,255,.05)", pointerEvents:"none" }}/>
         <div style={{ position:"relative", zIndex:1 }}>
           <div style={{ fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--teal-2,#22895F)", marginBottom:10 }}>Vendor dashboard</div>
-          <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:"clamp(20px,2.5vw,28px)", fontWeight:700, color:"var(--cream,#F2EBD9)", lineHeight:1.25, marginBottom:10 }}>
-            Good {new Date().getHours()<12?"morning":"afternoon"}, {userName().split(" ")[0]}.
-          </h1>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, flexWrap:"wrap" }}>
+            <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:"clamp(20px,2.5vw,28px)", fontWeight:700, color:"var(--cream,#F2EBD9)", lineHeight:1.25, margin:0 }}>
+              Good {new Date().getHours()<12?"morning":"afternoon"}, {userName().split(" ")[0]}.
+            </h1>
+            {/* Verification badge next to name */}
+            {profile?.verification_status === "verified"
+              ? <span title="Platform verified" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"rgba(95,207,160,.18)", border:"1px solid rgba(95,207,160,.35)", color:"#5FCFA0", fontSize:11, fontWeight:700, padding:"3px 10px 3px 6px", borderRadius:99, flexShrink:0 }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <circle cx="7" cy="7" r="7" fill="#5FCFA0"/>
+                    <path d="M3.5 7l2.5 2.5 4.5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Verified
+                </span>
+              : profile?.verification_status === "rejected"
+              ? <span title="Profile rejected — re-upload documents" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"rgba(245,147,127,.18)", border:"1px solid rgba(245,147,127,.35)", color:"#F5937F", fontSize:11, fontWeight:700, padding:"3px 10px 3px 6px", borderRadius:99, flexShrink:0 }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <circle cx="7" cy="7" r="7" fill="#F5937F"/>
+                    <path d="M4.5 4.5l5 5M9.5 4.5l-5 5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                  Action needed
+                </span>
+              : <span title="Verification pending admin review" style={{ display:"inline-flex", alignItems:"center", gap:5, background:"rgba(245,179,66,.18)", border:"1px solid rgba(245,179,66,.35)", color:"#F5B342", fontSize:11, fontWeight:700, padding:"3px 10px 3px 6px", borderRadius:99, flexShrink:0 }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <circle cx="7" cy="7" r="7" fill="#F5B342"/>
+                    <path d="M7 4v3.5l2 1.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Pending review
+                </span>
+            }
+          </div>
           <p style={{ fontSize:13, color:"rgba(242,235,217,.55)", lineHeight:1.6, marginBottom:20, maxWidth:400 }}>
             {score < 40 ? "Your profile is still new — complete it to start getting discovered by buyers."
               : score < 70 ? "You're building up. A few more steps and buyers will find you easily."
@@ -455,6 +507,88 @@ function VendorHome({ toast, nav }) {
         </div>
       </div>
 
+      {/* ── Verification status card ── */}
+      {(() => {
+        const vs = profile?.verification_status;
+        const checklist = completeness?.checklist || [];
+        const docUploaded  = checklist.find(c=>c.item==="At least 1 document uploaded")?.done;
+        const docVerified  = checklist.find(c=>c.item==="Document verified by admin")?.done;
+        const esgDone      = checklist.find(c=>c.item==="ESG metrics submitted")?.done;
+        const fullyDone    = vs==="verified" && profile?.gstin_verified && profile?.pan_verified && docVerified && esgDone;
+
+        const checks = [
+          { label:"Platform verification", done: vs==="verified", rejected: vs==="rejected", pending: vs==="pending", info: vs==="verified"?"Admin approved your profile": vs==="rejected"?"Re-upload your documents":"Waiting for admin review" },
+          { label:"GST number",    done: !!profile?.gstin_verified, info: profile?.gstin_verified?"GSTIN verified":"Verify your GST number in Profile → Verification" },
+          { label:"PAN card",      done: !!profile?.pan_verified,   info: profile?.pan_verified?"PAN verified":"Verify your PAN card in Profile → Verification" },
+          { label:"KYC document",  done: !!docUploaded,             info: docUploaded?(docVerified?"Document verified by admin":"Document uploaded — pending admin review"):"Upload a KYC document in Profile → Documents" },
+          { label:"ESG assessment",done: !!esgDone,                 info: esgDone?"ESG score submitted":"Complete the ESG assessment to unlock more opportunities" },
+        ];
+
+        return (
+          <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:14, overflow:"hidden", boxShadow:"0 2px 12px rgba(11,29,51,.05)" }}>
+            {/* Card header */}
+            <div style={{ padding:"16px 22px", borderBottom:"1px solid var(--border,#D4C9B5)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:15 }}>{fullyDone?"🏅":"🔐"}</span>
+                <span style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)" }}>
+                  {fullyDone ? "Profile fully verified" : "Verification status"}
+                </span>
+              </div>
+              <button onClick={()=>nav("/dashboard/profile")}
+                style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, fontWeight:600, color:"var(--teal,#18664A)", fontFamily:"'DM Sans',sans-serif" }}>
+                Manage →
+              </button>
+            </div>
+
+            {fullyDone && (
+              <div style={{ padding:"14px 22px", background:"var(--teal-bg,#E4F2EB)", fontSize:13, color:"var(--teal,#18664A)", fontWeight:500 }}>
+                🎉 Congratulations — your profile is fully verified. Buyers can see and trust your listing.
+              </div>
+            )}
+
+            {/* Check rows */}
+            <div style={{ padding:"6px 0" }}>
+              {checks.map((c,i)=>(
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 22px", borderBottom: i<checks.length-1?"1px solid var(--border,#D4C9B5)":"none" }}>
+                  {/* Status icon */}
+                  <div style={{ width:24, height:24, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center",
+                    background: c.done ? "var(--teal-bg,#E4F2EB)" : c.rejected ? "var(--red-bg,#FAEBE8)" : "var(--amber-bg,#FDF3E4)" }}>
+                    {c.done
+                      ? <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l2.5 2.5 5.5-6" stroke="var(--teal,#18664A)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      : c.rejected
+                      ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2L2 8" stroke="var(--red,#B84232)" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                      : <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4.5" stroke="var(--amber,#B8720A)" strokeWidth="1.2"/><path d="M5 3v2.5l1.5 1" stroke="var(--amber,#B8720A)" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                    }
+                  </div>
+                  {/* Label + info */}
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:"var(--navy,#0B1D33)" }}>{c.label}</div>
+                    <div style={{ fontSize:11, color: c.done?"var(--teal,#18664A)": c.rejected?"var(--red,#B84232)":"var(--amber,#B8720A)", marginTop:1 }}>{c.info}</div>
+                  </div>
+                  {/* Status chip */}
+                  <span style={{ fontSize:10, fontWeight:700, letterSpacing:".06em", textTransform:"uppercase", padding:"3px 9px", borderRadius:99, flexShrink:0,
+                    background: c.done?"var(--teal-bg,#E4F2EB)": c.rejected?"var(--red-bg,#FAEBE8)":"var(--amber-bg,#FDF3E4)",
+                    color: c.done?"var(--teal,#18664A)": c.rejected?"var(--red,#B84232)":"var(--amber,#B8720A)" }}>
+                    {c.done ? "Verified" : c.rejected ? "Rejected" : "Pending"}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {!fullyDone && (
+              <div style={{ padding:"14px 22px", borderTop:"1px solid var(--border,#D4C9B5)", background:"var(--cream,#F2EBD9)" }}>
+                <button onClick={()=>nav("/dashboard/profile")}
+                  style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"10px 20px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"background .18s" }}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--teal,#18664A)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="var(--navy,#0B1D33)"}>
+                  Complete your verification →
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── AI suggestions ── */}
       {suggs.length > 0 && (
         <div>
@@ -476,6 +610,43 @@ function VendorHome({ toast, nav }) {
                   onMouseLeave={e=>e.currentTarget.style.background="var(--navy,#0B1D33)"}>
                   {s.action} →
                 </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Bid pipeline — shown before matched RFPs ── */}
+      {recentBids.length > 0 && (
+        <div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:14 }}>📨</span>
+              <span style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Your bid pipeline</span>
+            </div>
+            <button onClick={()=>nav("/dashboard/opportunities")} style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, fontWeight:600, color:"var(--teal,#18664A)", fontFamily:"'DM Sans',sans-serif" }}>View all →</button>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {[...recentBids].sort((a,b)=>a.status==="awarded"?-1:b.status==="awarded"?1:0).map(b=>(
+              <div key={b.id} style={{ background:"white", border:`1.5px solid ${b.status==="awarded"?"var(--teal,#18664A)":b.status==="shortlisted"?"#6384ff":"var(--border,#D4C9B5)"}`, borderRadius:10, overflow:"hidden" }}>
+                {b.status==="awarded" && (
+                  <div style={{ background:"var(--teal,#18664A)", padding:"5px 16px", fontSize:11, fontWeight:700, color:"white", letterSpacing:".04em" }}>🏆 Contract awarded</div>
+                )}
+                <div style={{ padding:"12px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:14, fontWeight:600, color:"var(--navy,#0B1D33)", marginBottom:2 }}>{b.request_title}</div>
+                    <div style={{ display:"flex", gap:10, fontSize:12, color:"var(--muted,#67788D)", flexWrap:"wrap" }}>
+                      <span>{b.request_category}</span>
+                      {b.buyer_name && <span>· 👤 {b.buyer_name}</span>}
+                      {b.timeline   && <span>· ⏱ {b.timeline}</span>}
+                      {b.request_deadline && <span>· 📅 Due {new Date(b.request_deadline).toLocaleDateString()}</span>}
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, background:`${bidStatusColor[b.status]}15`, padding:"5px 12px", borderRadius:99, flexShrink:0 }}>
+                    <span style={{ fontSize:13 }}>{bidStatusIcon[b.status]}</span>
+                    <span style={{ fontSize:11, fontWeight:700, color:bidStatusColor[b.status], textTransform:"uppercase", letterSpacing:".06em" }}>{b.status.replace(/_/g," ")}</span>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -523,33 +694,6 @@ function VendorHome({ toast, nav }) {
         )}
       </div>
 
-      {/* ── Bid pipeline ── */}
-      {recentBids.length > 0 && (
-        <div>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:14 }}>📨</span>
-              <span style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Your bid pipeline</span>
-            </div>
-            <button onClick={()=>nav("/dashboard/opportunities")} style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, fontWeight:600, color:"var(--teal,#18664A)", fontFamily:"'DM Sans',sans-serif" }}>View all →</button>
-          </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {recentBids.map(b=>(
-              <div key={b.id} style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:10, padding:"14px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:600, color:"var(--navy,#0B1D33)", marginBottom:2 }}>{b.request_title}</div>
-                  <div style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{b.request_category} · {new Date(b.created_at).toLocaleDateString()}</div>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, background:`${bidStatusColor[b.status]}15`, padding:"5px 12px", borderRadius:99, flexShrink:0 }}>
-                  <span style={{ fontSize:13 }}>{bidStatusIcon[b.status]}</span>
-                  <span style={{ fontSize:11, fontWeight:700, color:bidStatusColor[b.status], textTransform:"uppercase", letterSpacing:".06em" }}>{b.status.replace(/_/g," ")}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── Unread notifications ── */}
       {notifs.length > 0 && (
         <div>
@@ -559,15 +703,23 @@ function VendorHome({ toast, nav }) {
             <span style={{ background:"var(--red,#B84232)", color:"white", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:99 }}>{notifs.length}</span>
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {notifs.map(n=>(
-              <div key={n.id} style={{ background:"white", border:"1px solid var(--border)", borderRadius:10, padding:"12px 18px", display:"flex", alignItems:"flex-start", gap:10 }}>
-                <span style={{ fontSize:16 }}>{n.type==="success"?"✅":n.type==="warning"?"⚠️":"ℹ️"}</span>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13, lineHeight:1.55, color:"var(--navy,#0B1D33)" }}>{n.message}</div>
-                  <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:3 }}>{new Date(n.created_at).toLocaleString()}</div>
+            {notifs.map(n=>{
+              const dest = fixNotifLink(n.link, n.category);
+              const accentColor = n.type==="success"?"var(--teal,#18664A)":n.type==="warning"?"var(--amber,#B8720A)":"#6384ff";
+              return (
+                <div key={n.id} onClick={()=>dest&&nav(dest)}
+                  style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderLeft:`3px solid ${accentColor}`, borderRadius:10, padding:"12px 16px", display:"flex", alignItems:"flex-start", gap:12, cursor:dest?"pointer":"default", transition:"box-shadow .15s" }}
+                  onMouseEnter={e=>{ if(dest) e.currentTarget.style.boxShadow="0 4px 16px rgba(11,29,51,.08)"; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; }}>
+                  <div style={{ width:6, height:6, borderRadius:"50%", background:accentColor, flexShrink:0, marginTop:5 }}/>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, lineHeight:1.55, color:"var(--navy,#0B1D33)" }}>{n.message}</div>
+                    <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:3 }}>{new Date(n.created_at).toLocaleString()}</div>
+                  </div>
+                  {dest && <span style={{ fontSize:12, color:"var(--teal,#18664A)", flexShrink:0, alignSelf:"center" }}>→</span>}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -749,11 +901,11 @@ function VendorProfile({ toast }) {
       <SectionCard id="basics" title="Business identity" {...sc}
         viewContent={
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            <Row label="Organisation" value={form.organization_name}/>
-            <Row label="Description"  value={form.description}/>
+            <Row label="Organisation" value={form.organization_name} hint="+5%" hintMsg="Add your organisation name to gain +5% profile score"/>
+            <Row label="Description"  value={form.description?.length>50?form.description:undefined} hint="+5%" hintMsg="Write a description (50+ chars) to gain +5% profile score"/>
             <Row label="Impact"       value={form.impact_statement}/>
-            <Row label="Location"     value={form.location}/>
-            <Row label="Website"      value={form.website}/>
+            <Row label="Location"     value={form.location} hint="+5%" hintMsg="Add your location to gain +5% profile score"/>
+            <Row label="Website"      value={form.website} hint="+5%" hintMsg="Add your website to gain +5% profile score"/>
             <Row label="Phone"        value={form.phone}/>
             {form.is_women_owned && <Row label="Women-owned" value="Yes ✊"/>}
           </div>
@@ -794,7 +946,7 @@ function VendorProfile({ toast }) {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
             <Input label="Location" value={form.location||""} onChange={e=>setForm(p=>({...p,location:e.target.value}))} placeholder="City, State"/>
             <Input label="Phone" value={form.phone||""} onChange={e=>setForm(p=>({...p,phone:e.target.value}))} placeholder="+91 XXXXX XXXXX"/>
-            <Input label="Website" value={form.website||""} onChange={e=>setForm(p=>({...p,website:e.target.value}))} placeholder="https://…"/>
+            <Input label="Add website" value={form.website||""} onChange={e=>setForm(p=>({...p,website:e.target.value}))} placeholder="https://yourwebsite.com"/>
             <Input label="Year founded" type="number" value={form.year_founded||""} onChange={e=>setForm(p=>({...p,year_founded:e.target.value}))} placeholder="2018"/>
           </div>
           <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:14, fontWeight:500, color:"var(--navy,#0B1D33)" }}>
@@ -808,7 +960,7 @@ function VendorProfile({ toast }) {
       <SectionCard id="categories" title="Categories & certifications" {...sc}
         viewContent={
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            <Row label="Service categories" value={cats.join(", ")||undefined}/>
+            <Row label="Service categories" value={cats.join(", ")||undefined} hint="+5%" hintMsg="Select your service categories to gain +5% profile score"/>
             <Row label="Certifications"     value={certs.map(c=>c.replace(/_/g," ")).join(", ")||undefined}/>
             <Row label="SDG alignment"      value={sdgs.join(", ")||undefined}/>
           </div>
@@ -1000,25 +1152,30 @@ function VendorServices({ toast }) {
 
 /* ─────────────────────────────────── OPPORTUNITIES tab ── */
 function VendorOpportunities({ toast }) {
+  const nav = useNavigate();
   const [view, setView]         = useState("browse"); // 'browse'|'bids'
   const [requests, setRequests] = useState([]);
   const [bids, setBids]         = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState("");
   const [profile, setProfile]   = useState(null);
+  const [docs, setDocs]         = useState([]);
   const [esgResult, setEsgResult] = useState(null);
   const [bidModal, setBidModal] = useState(null);
   const [confirmWithdraw, setConfirmWithdraw] = useState(null);
+  const [buyerModal, setBuyerModal] = useState(null); // {name, email, rfp_title}
 
   const load = () => {
     Promise.allSettled([
       buyerAPI.listRequests(), bidAPI.myBids(),
       vendorAPI.getMyProfile(), vendorAPI.esgCompliance(),
-    ]).then(([r,b,p,e])=>{
+      vendorAPI.getMyDocuments(),
+    ]).then(([r,b,p,e,d])=>{
       if(r.status==="fulfilled") setRequests(r.value.data);
       if(b.status==="fulfilled") setBids(b.value.data);
       if(p.status==="fulfilled") setProfile(p.value.data);
       if(e.status==="fulfilled") setEsgResult(e.value.data);
+      if(d.status==="fulfilled") setDocs(d.value.data);
     }).finally(()=>setLoading(false));
   };
   useEffect(()=>{ load(); },[]);
@@ -1050,14 +1207,64 @@ function VendorOpportunities({ toast }) {
       </div>
 
       {/* Browse RFPs */}
-      {view === "browse" && (<>
+      {view === "browse" && (() => {
+        const kycDone = profile?.gstin_verified || profile?.pan_verified || docs.length > 0;
+        return (<>
         <div style={{ marginBottom:16 }}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Search open RFPs…"
             style={{ width:"100%", padding:"11px 16px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"white", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:8, outline:"none" }}/>
         </div>
         {filtered.length === 0
           ? <Empty icon="📋" title="No RFPs found"/>
-          : <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          : !kycDone
+          ? (
+            /* ── KYC gate: real cards replaced with blurred placeholders + overlay ── */
+            <div style={{ position:"relative" }}>
+              {/* Real tiles rendered but blurred — pointer events disabled so nothing is clickable */}
+              <div style={{ filter:"blur(3px)", pointerEvents:"none", userSelect:"none", display:"flex", flexDirection:"column", gap:10 }}>
+                {filtered.slice(0,3).map(r=>{
+                  const match = isMatch(r);
+                  return (
+                    <div key={r.id} style={{ background:"white", border:`1.5px solid ${match?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, borderRadius:12, padding:"18px 22px", display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, boxShadow:"0 2px 10px rgba(11,29,51,.05)" }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, flexWrap:"wrap" }}>
+                          <span style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{r.title}</span>
+                          {match && <span style={{ fontSize:10, fontWeight:700, background:"var(--teal-bg,#E4F2EB)", color:"var(--teal,#18664A)", padding:"2px 8px", borderRadius:99 }}>✓ Matches your profile</span>}
+                        </div>
+                        <div style={{ fontSize:13, color:"var(--muted,#67788D)", lineHeight:1.55, marginBottom:8 }}>{r.description?.slice(0,120)}…</div>
+                        <div style={{ display:"flex", gap:12, fontSize:12, color:"var(--muted,#67788D)", flexWrap:"wrap" }}>
+                          {r.category && <span>📂 {r.category}</span>}
+                          {r.budget   && <span>💰 {r.budget}</span>}
+                          {r.deadline && <span>📅 {new Date(r.deadline).toLocaleDateString()}</span>}
+                          <span>📨 {r.bid_count||0} bids</span>
+                        </div>
+                      </div>
+                      <div style={{ background:"var(--teal,#18664A)", color:"white", borderRadius:6, padding:"9px 16px", fontSize:12, fontWeight:600 }}>Bid →</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Overlay — anchored to top so lock message sits just below the search bar */}
+              <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-start", gap:12, background:"rgba(255,255,255,.72)", borderRadius:12, paddingTop:28, textAlign:"center" }}>
+                <div style={{ fontSize:36 }}>🔒</div>
+                <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:700, color:"var(--navy,#0B1D33)" }}>
+                  {filtered.length} opportunit{filtered.length===1?"y":"ies"} found
+                </div>
+                <div style={{ fontSize:13, color:"var(--muted,#67788D)", maxWidth:300, lineHeight:1.65 }}>
+                  Verify your GST, PAN or upload a document to unlock and bid on these opportunities.
+                </div>
+                <button onClick={()=>nav("/dashboard/profile")}
+                  style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"12px 28px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", transition:"background .18s" }}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--teal,#18664A)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="var(--navy,#0B1D33)"}>
+                  Complete verification →
+                </button>
+              </div>
+            </div>
+          )
+          : (
+            /* ── Unlocked: real cards with Bid buttons ── */
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
               {filtered.map(r=>{
                 const match = isMatch(r);
                 const meetsESG = !r.min_esg_score || (esgResult?.score||0) >= r.min_esg_score;
@@ -1082,39 +1289,72 @@ function VendorOpportunities({ toast }) {
                 );
               })}
             </div>
+          )
         }
-      </>)}
+        </>);
+      })()}
 
       {/* My Bids */}
       {view === "bids" && (<>
         {bids.length === 0
           ? <Empty icon="📨" title="No bids yet" desc="Browse RFPs above and submit your first proposal"/>
           : <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {bids.map(b=>(
-                <div key={b.id} style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"18px 22px", boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
-                  <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16 }}>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:3 }}>{b.request_title}</div>
-                      <div style={{ fontSize:12, color:"var(--muted,#67788D)", marginBottom:8 }}>{b.request_category} · {new Date(b.created_at).toLocaleDateString()}</div>
-                      <div style={{ fontSize:13, color:"var(--body,#253446)", lineHeight:1.55, marginBottom:8 }}>{b.cover_note?.slice(0,160)}…</div>
-                      <div style={{ display:"flex", gap:12, fontSize:12, color:"var(--muted,#67788D)" }}>
-                        {b.proposed_price && <span>💰 {b.proposed_price}</span>}
-                        {b.timeline       && <span>⏱ {b.timeline}</span>}
+              {[...bids].sort((a,b)=>a.status==="awarded"?-1:b.status==="awarded"?1:0).map(b=>(
+                <div key={b.id} style={{ background:"white", border:`1.5px solid ${b.status==="awarded"?"var(--teal,#18664A)":b.status==="shortlisted"?"#6384ff":"var(--border,#D4C9B5)"}`, borderRadius:12, overflow:"hidden", boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
+                  {/* Awarded banner */}
+                  {b.status==="awarded" && (
+                    <div style={{ background:"var(--teal,#18664A)", padding:"8px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ fontSize:16 }}>🏆</span>
+                        <span style={{ fontSize:12, fontWeight:700, color:"white" }}>Contract awarded — you won!</span>
                       </div>
-                      {b.buyer_note && <div style={{ marginTop:10, fontSize:12, padding:"8px 12px", background:"var(--cream,#F2EBD9)", borderRadius:8, color:"var(--body,#253446)" }}>💬 Buyer: {b.buyer_note}</div>}
-                    </div>
-                    <div style={{ flexShrink:0, textAlign:"right" }}>
-                      <div style={{ display:"inline-flex", alignItems:"center", gap:5, background:`${statusColor[b.status]}18`, padding:"5px 12px", borderRadius:99 }}>
-                        <span style={{ fontSize:13 }}>{statusIcon[b.status]}</span>
-                        <span style={{ fontSize:11, fontWeight:700, color:statusColor[b.status], textTransform:"uppercase", letterSpacing:".06em" }}>{b.status.replace(/_/g," ")}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {["submitted","under_review"].includes(b.status) && (
-                    <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid var(--border,#D4C9B5)" }}>
-                      <Btn onClick={()=>setConfirmWithdraw(b.id)} variant="ghost" size="sm">Withdraw bid</Btn>
+                      {b.buyer_email && (
+                        <a href={`mailto:${b.buyer_email}`} style={{ fontSize:12, color:"rgba(255,255,255,.8)", textDecoration:"none", fontWeight:500 }}>
+                          Contact buyer ✉️
+                        </a>
+                      )}
                     </div>
                   )}
+                  <div style={{ padding:"18px 22px" }}>
+                    <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16 }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:3 }}>{b.request_title}</div>
+                        <div style={{ display:"flex", gap:10, fontSize:12, color:"var(--muted,#67788D)", marginBottom:8, flexWrap:"wrap", alignItems:"center" }}>
+                          <span>{b.request_category}</span>
+                          {b.buyer_name && (
+                            <button onClick={()=>setBuyerModal({name:b.buyer_name, email:b.buyer_email, rfp_title:b.request_title, deadline:b.request_deadline, status:b.request_status})}
+                              style={{ background:"none", border:"none", cursor:"pointer", padding:0, fontSize:12, color:"var(--teal,#18664A)", fontFamily:"'DM Sans',sans-serif", fontWeight:600, textDecoration:"underline", textDecorationStyle:"dotted", textUnderlineOffset:3 }}>
+                              👤 {b.buyer_name}
+                            </button>
+                          )}
+                          {b.request_deadline && <span>· 📅 Due {new Date(b.request_deadline).toLocaleDateString()}</span>}
+                        </div>
+                        <div style={{ fontSize:13, color:"var(--body,#253446)", lineHeight:1.55, marginBottom:8 }}>{b.cover_note?.slice(0,160)}…</div>
+                        <div style={{ display:"flex", gap:12, fontSize:12, color:"var(--muted,#67788D)" }}>
+                          {b.proposed_price && <span>💰 {b.proposed_price}</span>}
+                          {b.timeline       && <span>⏱ {b.timeline}</span>}
+                        </div>
+                        {b.buyer_note && <div style={{ marginTop:10, fontSize:12, padding:"8px 12px", background:"var(--cream,#F2EBD9)", borderRadius:8, color:"var(--body,#253446)" }}>💬 Buyer note: {b.buyer_note}</div>}
+                      </div>
+                      <div style={{ flexShrink:0, textAlign:"right" }}>
+                        <div style={{ display:"inline-flex", alignItems:"center", gap:5, background:`${statusColor[b.status]}18`, padding:"5px 12px", borderRadius:99 }}>
+                          <span style={{ fontSize:13 }}>{statusIcon[b.status]}</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:statusColor[b.status], textTransform:"uppercase", letterSpacing:".06em" }}>{b.status.replace(/_/g," ")}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Actions */}
+                    <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid var(--border,#D4C9B5)", display:"flex", gap:8, flexWrap:"wrap" }}>
+                      {["submitted","under_review"].includes(b.status) && (
+                        <Btn onClick={()=>setConfirmWithdraw(b.id)} variant="ghost" size="sm">Withdraw bid</Btn>
+                      )}
+                      {b.status==="awarded" && b.buyer_email && (
+                        <a href={`mailto:${b.buyer_email}`} style={{ display:"inline-flex", alignItems:"center", gap:6, background:"var(--teal-bg,#E4F2EB)", color:"var(--teal,#18664A)", border:"none", borderRadius:6, padding:"7px 14px", fontSize:12, fontWeight:600, textDecoration:"none", fontFamily:"'DM Sans',sans-serif" }}>
+                          ✉️ Email {b.buyer_name||"buyer"}
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1123,6 +1363,47 @@ function VendorOpportunities({ toast }) {
 
       {bidModal && <BidSubmitModal rfp={bidModal} profile={profile} esgResult={esgResult} onClose={()=>{ setBidModal(null); load(); }} toast={toast}/>}
       <ConfirmModal open={!!confirmWithdraw} onClose={()=>setConfirmWithdraw(null)} onConfirm={async()=>{ await bidAPI.withdraw(confirmWithdraw); toast.success("Bid withdrawn"); load(); }} title="Withdraw bid" message="Withdraw this bid? You can resubmit later." variant="danger"/>
+
+      {/* Buyer info modal */}
+      {buyerModal && (
+        <div onClick={e=>{if(e.target===e.currentTarget)setBuyerModal(null)}}
+          style={{ position:"fixed", inset:0, background:"rgba(11,29,51,.5)", backdropFilter:"blur(6px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1100, padding:20 }}>
+          <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:16, width:"100%", maxWidth:400, padding:"28px", boxShadow:"0 24px 80px rgba(11,29,51,.2)" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:18, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Buyer details</div>
+              <button onClick={()=>setBuyerModal(null)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:20, color:"var(--muted,#67788D)", lineHeight:1 }}>×</button>
+            </div>
+            <div style={{ background:"var(--navy,#0B1D33)", borderRadius:10, padding:"16px 20px", marginBottom:16 }}>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--cream,#F2EBD9)", marginBottom:4 }}>{buyerModal.name}</div>
+              <div style={{ fontSize:12, color:"rgba(242,235,217,.55)" }}>Buyer · {buyerModal.rfp_title}</div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
+              {buyerModal.email && (
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"var(--cream,#F2EBD9)", borderRadius:8 }}>
+                  <span style={{ fontSize:12, fontWeight:700, color:"var(--muted,#67788D)", textTransform:"uppercase", letterSpacing:".06em" }}>Email</span>
+                  <a href={`mailto:${buyerModal.email}`} style={{ fontSize:13, color:"var(--teal,#18664A)", fontWeight:600, textDecoration:"none" }}>{buyerModal.email}</a>
+                </div>
+              )}
+              {buyerModal.deadline && (
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"var(--cream,#F2EBD9)", borderRadius:8 }}>
+                  <span style={{ fontSize:12, fontWeight:700, color:"var(--muted,#67788D)", textTransform:"uppercase", letterSpacing:".06em" }}>RFP deadline</span>
+                  <span style={{ fontSize:13, color:"var(--navy,#0B1D33)", fontWeight:600 }}>{new Date(buyerModal.deadline).toLocaleDateString()}</span>
+                </div>
+              )}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:"var(--cream,#F2EBD9)", borderRadius:8 }}>
+                <span style={{ fontSize:12, fontWeight:700, color:"var(--muted,#67788D)", textTransform:"uppercase", letterSpacing:".06em" }}>RFP status</span>
+                <span style={{ fontSize:13, color:"var(--navy,#0B1D33)", fontWeight:600, textTransform:"capitalize" }}>{buyerModal.status||"active"}</span>
+              </div>
+            </div>
+            {buyerModal.email && (
+              <a href={`mailto:${buyerModal.email}`}
+                style={{ display:"block", width:"100%", textAlign:"center", background:"var(--teal,#18664A)", color:"white", borderRadius:6, padding:"11px", fontSize:13, fontWeight:600, textDecoration:"none", fontFamily:"'DM Sans',sans-serif", boxSizing:"border-box" }}>
+                ✉️ Send email to {buyerModal.name.split(" ")[0]}
+              </a>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1410,11 +1691,27 @@ function VendorESG({ toast }) {
 
 /* ─────────────────────────────────── Shared sub-components ── */
 
-function Row({ label, value }) {
+function Row({ label, value, hint, hintMsg }) {
+  const [hovered, setHovered] = React.useState(false);
+  const filled = Boolean(value);
   return (
     <div style={{ display:"flex", gap:12, alignItems:"flex-start", padding:"6px 0", borderBottom:"1px solid var(--border,#D4C9B5)" }}>
       <span style={{ fontSize:11, fontWeight:700, color:"var(--muted,#67788D)", textTransform:"uppercase", letterSpacing:".07em", minWidth:120, flexShrink:0 }}>{label}</span>
-      <span style={{ fontSize:13, color: value ? "var(--navy,#0B1D33)" : "var(--muted,#67788D)", fontStyle: value ? "normal" : "italic" }}>{value || "Not added"}</span>
+      <span style={{ fontSize:13, color: filled ? "var(--navy,#0B1D33)" : "var(--muted,#67788D)", fontStyle: filled ? "normal" : "italic", flex:1 }}>{value || "Not added"}</span>
+      {hint && (
+        <div style={{ position:"relative", flexShrink:0 }}
+          onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}>
+          {filled
+            ? <span style={{ fontSize:10, fontWeight:700, color:"var(--teal,#18664A)", background:"var(--teal-bg,#E4F2EB)", padding:"2px 7px", borderRadius:99, cursor:"default" }}>✓</span>
+            : <span style={{ fontSize:10, fontWeight:700, color:"var(--amber,#B8720A)", background:"var(--amber-bg,#FDF3E4)", padding:"2px 7px", borderRadius:99, cursor:"default", whiteSpace:"nowrap" }}>{hint}</span>
+          }
+          {hovered && hintMsg && (
+            <div style={{ position:"absolute", right:0, top:"120%", zIndex:50, background:"var(--navy,#0B1D33)", color:"white", fontSize:11, padding:"6px 10px", borderRadius:6, whiteSpace:"nowrap", boxShadow:"0 4px 12px rgba(0,0,0,.2)", pointerEvents:"none" }}>
+              {filled ? `✓ Adds ${hint} to your profile score` : hintMsg}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -26,6 +26,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem("token", res.data.access_token);
     localStorage.setItem("role",  res.data.role);
     localStorage.setItem("name",  res.data.name);
+    if (res.data.permissions) localStorage.setItem("permissions", JSON.stringify(res.data.permissions));
     setUser(res.data);
     return res.data;
   };

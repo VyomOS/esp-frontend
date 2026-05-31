@@ -131,6 +131,11 @@ export const adminAPI = {
   aiDocCheck: data => API.post("/admin/ai-doc-check", data),
   aiPlatformInsight: () => API.get("/admin/ai-platform-insight"),
   aiImpactStory: () => API.get("/admin/ai-impact-story"),
+  // Team management
+  listAdmins: () => API.get("/admin/admins"),
+  createAdmin: data => API.post("/admin/create-admin", data),
+  updateAdminPermissions: (id, data) => API.patch(`/admin/admins/${id}/permissions`, data),
+  removeAdmin: id => API.delete(`/admin/admins/${id}`),
 };
 
 export const notificationAPI = {

@@ -18,6 +18,17 @@ const BID_ICON   = { submitted:"📨", under_review:"👀", shortlisted:"⭐", a
 
 /* ─────────────────────────────────── helpers ── */
 const userName = () => localStorage.getItem("name") || "there";
+function fixNotifLink(link, category) {
+  const map = { "/dashboard/my-bids":"/dashboard/requests", "/dashboard/my-requests":"/dashboard/requests", "/dashboard/documents":"/dashboard", "/dashboard/profile":"/dashboard" };
+  const resolved = link ? (map[link] || link) : null;
+  if (resolved) return resolved;
+  if (category === "bid") return "/dashboard/requests";
+  return null;
+}
+function parseJSON(val, fallback = []) {
+  if (Array.isArray(val)) return val;
+  try { return JSON.parse(val || "[]"); } catch { return fallback; }
+}
 
 /* ─────────────────────────────────── Main router ── */
 export default function BuyerDashboard() {
@@ -234,15 +245,23 @@ function BuyerHome({ toast, nav }) {
             <span style={{ background:"var(--red,#B84232)", color:"white", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:99 }}>{notifs.length}</span>
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {notifs.map(n=>(
-              <div key={n.id} style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:10, padding:"12px 18px", display:"flex", alignItems:"flex-start", gap:10 }}>
-                <span style={{ fontSize:16 }}>{n.type==="success"?"✅":n.type==="warning"?"⚠️":"ℹ️"}</span>
-                <div>
+            {notifs.map(n=>{
+              const dest = fixNotifLink(n.link, n.category);
+              const accentColor = n.type==="success"?"var(--teal,#18664A)":n.type==="warning"?"var(--amber,#B8720A)":"#6384ff";
+              return (
+              <div key={n.id} onClick={()=>dest&&nav(dest)}
+                style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderLeft:`3px solid ${accentColor}`, borderRadius:10, padding:"12px 16px", display:"flex", alignItems:"flex-start", gap:12, cursor:dest?"pointer":"default", transition:"box-shadow .15s" }}
+                onMouseEnter={e=>{ if(dest) e.currentTarget.style.boxShadow="0 4px 16px rgba(11,29,51,.08)"; }}
+                onMouseLeave={e=>{ e.currentTarget.style.boxShadow="none"; }}>
+                <div style={{ width:6, height:6, borderRadius:"50%", background:accentColor, flexShrink:0, marginTop:5 }}/>
+                <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, color:"var(--navy,#0B1D33)", lineHeight:1.55 }}>{n.message}</div>
                   <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:3 }}>{new Date(n.created_at).toLocaleString()}</div>
                 </div>
+                {dest && <span style={{ fontSize:12, color:"var(--teal,#18664A)", flexShrink:0, alignSelf:"center" }}>→</span>}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -375,11 +394,18 @@ function BuyerRequests({ toast }) {
   const [aiModal, setAiModal]     = useState(null);
   const [aiResults, setAiResults] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  // Vendor detail (from bid card click)
+  const [vendorDetailData, setVendorDetailData]     = useState(null);
+  const [vendorDetailLoading, setVendorDetailLoading] = useState(false);
+  const [vendorDetailName, setVendorDetailName]     = useState("");
+  const [showBidVendorContact, setShowBidVendorContact] = useState(false);
   const [aiSummary, setAiSummary] = useState("");
   // Confirms
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmClose, setConfirmClose]   = useState(null);
   const [confirmReopen, setConfirmReopen] = useState(null);
+  const [confirmAward, setConfirmAward]   = useState(null); // {bidId, vendorName}
+  const [awarding, setAwarding]           = useState(false);
 
   const load = () => buyerAPI.getMyRequests().then(r=>setRequests(r.data)).finally(()=>setLoading(false));
   useEffect(()=>{ load(); },[]);
@@ -435,25 +461,60 @@ function BuyerRequests({ toast }) {
     finally { setBidsLoading(false); }
   };
 
-  const updateBid = async (bidId, status) => {
-    try { await buyerAPI.updateBidStatus(bidId,{status,buyer_note:""}); toast.success(`Bid ${status.replace(/_/g," ")}`); viewBids(bidsModal); }
-    catch { toast.error("Failed"); }
+  const updateBid = (bidId, status) => {
+    if (status === "awarded") {
+      const bid = bids.find(b => b.id === bidId);
+      setConfirmAward({ bidId, vendorName: bid?.vendor_name || "this vendor" });
+      return;
+    }
+    buyerAPI.updateBidStatus(bidId, { status, buyer_note: "" })
+      .then(() => { toast.success(`Bid ${status.replace(/_/g," ")}`); viewBids(bidsModal); })
+      .catch(() => toast.error("Failed"));
+  };
+
+  const handleAward = async () => {
+    if (!confirmAward) return;
+    setAwarding(true);
+    try {
+      await buyerAPI.updateBidStatus(confirmAward.bidId, { status:"awarded", buyer_note:"" });
+      await buyerAPI.closeRequest(bidsModal.id, { close_reason:"Contract awarded" });
+      toast.success(`Contract awarded to ${confirmAward.vendorName}. RFP closed.`);
+      setConfirmAward(null);
+      setBidsModal(null);
+      setBids([]);
+      setAiSummary("");
+      load();
+    } catch { toast.error("Something went wrong. Please try again."); }
+    finally { setAwarding(false); }
   };
 
   const getAiMatch = async (id) => {
     setAiModal(id); setAiResults(null); setAiLoading(true);
     try {
       const r = await buyerAPI.aiVendorMatches(id, 4);
-      // Response: [{vendor:{...}, match_reason, match_score}]
       const matches = Array.isArray(r.data) ? r.data.map(m => ({
+        vendor_id:   m.vendor?.id || m.vendor?.vendor_id,
         vendor_name: m.vendor?.organization_name || m.vendor?.name,
-        score: m.match_score,
+        location:    m.vendor?.location,
+        esg_score:   m.vendor?.esg_score,
+        esg_band:    m.vendor?.esg_band,
+        is_women_owned: m.vendor?.is_women_owned,
+        score:  m.match_score,
         reason: m.match_reason,
       })) : [];
       setAiResults(matches);
     }
     catch { toast.error("AI matching failed"); setAiResults([]); }
     finally { setAiLoading(false); }
+  };
+
+  const openBidVendor = async (vendorId, name) => {
+    setVendorDetailName(name); setVendorDetailData(null); setVendorDetailLoading(true); setShowBidVendorContact(false);
+    try {
+      const [p,e,r] = await Promise.allSettled([vendorAPI.getVendor(vendorId), vendorAPI.getESG(vendorId), buyerAPI.getRating(vendorId)]);
+      setVendorDetailData({ profile: p.status==="fulfilled"?p.value.data:null, esg: e.status==="fulfilled"?e.value.data:[], rating: r.status==="fulfilled"?r.value.data:null });
+    } catch { toast.error("Failed to load vendor profile"); }
+    finally { setVendorDetailLoading(false); }
   };
 
   const filtered = filter==="all" ? requests : requests.filter(r=>r.status===filter);
@@ -587,8 +648,8 @@ function BuyerRequests({ toast }) {
                   </div>
                 </div>
               )}
-              {bids.map(b=>(
-                <BidCard key={b.id} bid={b} onUpdate={updateBid}/>
+              {[...bids].sort((a,b)=>a.status==="awarded"?-1:b.status==="awarded"?1:0).map(b=>(
+                <BidCard key={b.id} bid={b} onUpdate={updateBid} onVendorClick={openBidVendor}/>
               ))}
             </div>
           )
@@ -596,7 +657,7 @@ function BuyerRequests({ toast }) {
       </Modal>
 
       {/* ── AI match modal ── */}
-      <Modal open={!!aiModal} onClose={()=>{setAiModal(null);setAiResults(null);}} title="✨ AI vendor matching" width={520}>
+      <Modal open={!!aiModal} onClose={()=>{setAiModal(null);setAiResults(null);}} title="✨ AI vendor matching" width={580}>
         {aiLoading
           ? <div style={{ textAlign:"center", padding:"40px" }}>
               <span className="spinner" style={{width:32,height:32,borderTopColor:"var(--teal,#18664A)",borderColor:"rgba(24,102,74,.2)"}}/><br/>
@@ -604,15 +665,43 @@ function BuyerRequests({ toast }) {
             </div>
           : aiResults?.length > 0
           ? <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {aiResults.map((m,i)=>(
-                <div key={i} style={{ background:"white", border:`1px solid ${i===0?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, borderRadius:10, padding:"16px 18px" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                    <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{m.vendor_name||m.name}</div>
-                    <span style={{ background:i===0?"var(--teal,#18664A)":"var(--cream,#F2EBD9)", color:i===0?"white":"var(--navy,#0B1D33)", fontSize:12, fontWeight:700, padding:"3px 10px", borderRadius:99 }}>{m.score}% match</span>
+              {aiResults.map((m,i)=>{
+                const esgColor = (m.esg_score||0)>=80?"var(--teal,#18664A)":(m.esg_score||0)>=60?"var(--amber,#B8720A)":"var(--red,#B84232)";
+                return (
+                  <div key={i} style={{ background:"white", border:`1.5px solid ${i===0?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, borderRadius:12, padding:"16px 18px" }}>
+                    {/* Header row */}
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8, gap:12 }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:4 }}>
+                          {i===0 && <span style={{ fontSize:9, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--teal,#18664A)" }}>🏆 Best match</span>}
+                          {m.is_women_owned && <span style={{ fontSize:9, fontWeight:700, color:"#db2777", background:"rgba(244,114,182,.1)", padding:"2px 7px", borderRadius:99 }}>Women-led</span>}
+                        </div>
+                        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{m.vendor_name}</div>
+                        <div style={{ display:"flex", gap:10, marginTop:4, flexWrap:"wrap" }}>
+                          {m.location && <span style={{ fontSize:12, color:"var(--muted,#67788D)" }}>📍 {m.location}</span>}
+                          {m.esg_score > 0 && <span style={{ fontSize:12, fontWeight:700, color:esgColor }}>🌱 ESG {m.esg_score}/100 {m.esg_band?`· ${m.esg_band}`:""}</span>}
+                        </div>
+                      </div>
+                      <span style={{ background:i===0?"var(--teal,#18664A)":"var(--cream,#F2EBD9)", color:i===0?"white":"var(--navy,#0B1D33)", fontSize:13, fontWeight:700, padding:"5px 12px", borderRadius:99, flexShrink:0 }}>{m.score}% match</span>
+                    </div>
+                    {/* AI reason */}
+                    <div style={{ fontSize:13, color:"var(--muted,#67788D)", lineHeight:1.55, marginBottom:12, paddingBottom:12, borderBottom:"1px solid var(--border,#D4C9B5)" }}>
+                      ✨ {m.reason}
+                    </div>
+                    {/* Actions */}
+                    <div style={{ display:"flex", gap:8 }}>
+                      <button
+                        onClick={()=>{ if(m.vendor_id) openBidVendor(m.vendor_id, m.vendor_name); }}
+                        disabled={!m.vendor_id}
+                        style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"8px 16px", fontSize:12, fontWeight:600, cursor:m.vendor_id?"pointer":"not-allowed", fontFamily:"'DM Sans',sans-serif", opacity:m.vendor_id?1:.5 }}
+                        onMouseEnter={e=>{ if(m.vendor_id) e.currentTarget.style.background="var(--teal,#18664A)"; }}
+                        onMouseLeave={e=>{ e.currentTarget.style.background="var(--navy,#0B1D33)"; }}>
+                        View full profile →
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ fontSize:13, color:"var(--muted,#67788D)", lineHeight:1.55 }}>{m.reason}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           : aiResults !== null
           ? <Empty icon="🌱" title="No matches yet" desc="No verified vendors match this requirement. Try lowering the minimum ESG score or broadening the category."/>
@@ -621,22 +710,69 @@ function BuyerRequests({ toast }) {
       </Modal>
 
       <ConfirmModal open={!!confirmDelete} onClose={()=>setConfirmDelete(null)} onConfirm={async()=>{await buyerAPI.deleteRequest(confirmDelete);toast.success("Deleted");load();}} title="Delete RFP" message="Permanently delete this request?" variant="danger"/>
-      <ConfirmModal open={!!confirmClose} onClose={()=>setConfirmClose(null)} onConfirm={async()=>{await buyerAPI.closeRequest(confirmClose,{close_reason:"Closed by buyer"});toast.success("Closed");load();}} title="Close RFP" message="Close this request? Vendors can no longer submit bids." variant="danger"/>
+      <ConfirmModal open={!!confirmClose} onClose={()=>setConfirmClose(null)} onConfirm={async()=>{await buyerAPI.closeRequest(confirmClose,{close_reason:"Closed by buyer"});toast.success("Closed");load();}} title="Close RFP" message="Close this request? Vendors can no longer submit bids." variant="danger" confirmLabel="Close RFP"/>
       <ConfirmModal open={!!confirmReopen} onClose={()=>setConfirmReopen(null)} onConfirm={async()=>{await buyerAPI.reopenRequest(confirmReopen);toast.success("Reopened!");load();}} title="Reopen RFP" message="Reopen this request? It will be visible to vendors again." variant="success"/>
+
+      {/* Award confirm — custom modal for richer messaging */}
+      {confirmAward && (
+        <div onClick={e=>{ if(e.target===e.currentTarget) setConfirmAward(null); }}
+          style={{ position:"fixed", inset:0, background:"rgba(11,29,51,0.5)", backdropFilter:"blur(6px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1200, padding:20 }}>
+          <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:16, width:"100%", maxWidth:440, padding:"32px 28px", boxShadow:"0 24px 80px rgba(11,29,51,.2)", textAlign:"center" }}>
+            <div style={{ width:56, height:56, borderRadius:"50%", background:"var(--teal-bg,#E4F2EB)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, margin:"0 auto 18px" }}>🏆</div>
+            <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:10 }}>Award contract?</h3>
+            <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.7, marginBottom:8 }}>
+              You're awarding this contract to <strong style={{ color:"var(--navy,#0B1D33)" }}>{confirmAward.vendorName}</strong>.
+            </p>
+            <p style={{ fontSize:13, color:"var(--amber,#B8720A)", background:"var(--amber-bg,#FDF3E4)", borderRadius:8, padding:"10px 14px", marginBottom:24, lineHeight:1.6 }}>
+              This will also <strong>close the RFP</strong> — no further bids will be accepted.
+            </p>
+            <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
+              <button onClick={()=>setConfirmAward(null)} disabled={awarding}
+                style={{ flex:1, padding:"11px", background:"none", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, fontSize:13, fontWeight:600, color:"var(--muted,#67788D)", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                Cancel
+              </button>
+              <button onClick={handleAward} disabled={awarding}
+                style={{ flex:1, padding:"11px", background:"var(--teal,#18664A)", border:"none", borderRadius:6, fontSize:13, fontWeight:600, color:"white", cursor:awarding?"wait":"pointer", fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                {awarding ? <><span className="spinner" style={{width:13,height:13}}/> Awarding…</> : "🏆 Award & close RFP"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <VendorDetailModal
+        open={!!vendorDetailData || vendorDetailLoading}
+        onClose={()=>{ setVendorDetailData(null); setVendorDetailLoading(false); setShowBidVendorContact(false); }}
+        detail={vendorDetailData}
+        loading={vendorDetailLoading}
+        vendorName={vendorDetailName}
+        showContact={showBidVendorContact}
+        onShowContact={()=>setShowBidVendorContact(true)}
+      />
     </div>
   );
 }
 
 /* ─────────────────────────────────── Bid card (module-level) ── */
-function BidCard({ bid, onUpdate }) {
+function BidCard({ bid, onUpdate, onVendorClick }) {
   const [showContact, setShowContact] = useState(false);
   const color = BID_COLOR[bid.status] || "var(--muted,#67788D)";
   const hasContact = bid.vendor_email || bid.vendor_phone;
   return (
-    <div style={{ background:"white", border:`1.5px solid ${bid.status==="shortlisted"?"var(--teal,#18664A)":bid.status==="awarded"?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, borderRadius:12, padding:"18px 20px" }}>
+    <div style={{ background:"white", border:`1.5px solid ${bid.status==="awarded"?"var(--teal,#18664A)":bid.status==="shortlisted"?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, borderRadius:12, overflow:"hidden" }}>
+      {bid.status==="awarded" && (
+        <div style={{ background:"var(--teal,#18664A)", padding:"8px 20px", display:"flex", alignItems:"center", gap:8 }}>
+          <span style={{ fontSize:16 }}>🏆</span>
+          <span style={{ fontSize:12, fontWeight:700, color:"white", letterSpacing:".04em" }}>Contract awarded — deal closed</span>
+        </div>
+      )}
+      <div style={{ padding:"18px 20px" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, marginBottom:10 }}>
         <div>
-          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:3 }}>{bid.vendor_name}</div>
+          <button onClick={()=>onVendorClick?.(bid.vendor_id, bid.vendor_name)}
+            style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:3, background:"none", border:"none", cursor:"pointer", padding:0, textAlign:"left", textDecoration:"underline", textDecorationStyle:"dotted", textUnderlineOffset:3 }}>
+            {bid.vendor_name}
+          </button>
           <div style={{ fontSize:12, color:"var(--muted,#67788D)" }}>
             {bid.vendor_location && <span>📍 {bid.vendor_location} · </span>}
             {bid.vendor_esg_score > 0 && <span style={{ color:"var(--teal,#18664A)" }}>ESG {bid.vendor_esg_score}/100</span>}
@@ -698,6 +834,7 @@ function BidCard({ bid, onUpdate }) {
           }
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -817,82 +954,253 @@ function BuyerVendors({ toast }) {
         )
       }
 
-      {/* Vendor detail modal */}
-      <Modal open={!!selected} onClose={()=>{setSelected(null);setDetail(null);setShowDetailContact(false);}} title="Vendor profile" width={580}>
-        {detailLoading
-          ? <div style={{ textAlign:"center", padding:"40px" }}><span className="spinner" style={{width:32,height:32}}/></div>
-          : detail ? (
-            <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-              {/* Header */}
-              <div style={{ background:"var(--navy,#0B1D33)", borderRadius:12, padding:"20px 24px" }}>
-                <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, fontWeight:700, color:"var(--cream,#F2EBD9)", marginBottom:6 }}>
-                  {detail.profile?.organization_name||selected?.name}
-                </div>
-                <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
-                  {detail.profile?.is_women_owned && <span style={{ fontSize:10, fontWeight:700, color:"#f9a8d4", background:"rgba(244,114,182,.2)", padding:"2px 8px", borderRadius:99 }}>Women-owned</span>}
-                  {detail.profile?.location && <span style={{ fontSize:12, color:"rgba(242,235,217,.6)" }}>📍 {detail.profile.location}</span>}
-                  {detail.profile?.esg_band && <span style={{ fontSize:12, fontWeight:700, color:"#5FCFA0" }}>🌱 {detail.profile.esg_band} ({detail.profile.esg_score}/100)</span>}
-                  {detail.rating?.average_rating > 0 && <span style={{ fontSize:12, color:"#F5B342" }}>⭐ {detail.rating.average_rating.toFixed(1)} ({detail.rating.total_reviews} reviews)</span>}
-                </div>
+      <VendorDetailModal
+        open={!!selected}
+        onClose={()=>{setSelected(null);setDetail(null);setShowDetailContact(false);}}
+        detail={detail}
+        loading={detailLoading}
+        vendorName={selected?.name||selected?.organization_name}
+        showContact={showDetailContact}
+        onShowContact={()=>setShowDetailContact(true)}
+      />
+    </div>
+  );
+}
+
+/* ─────────────────────────────────── VendorDetailModal (module-level, shared) ── */
+function VendorDetailModal({ open, onClose, detail, loading, vendorName, showContact, onShowContact }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Vendor profile" width={680}>
+      {loading
+        ? <div style={{ textAlign:"center", padding:"40px" }}><span className="spinner" style={{width:32,height:32}}/></div>
+        : detail ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+
+            {/* ── Header ── */}
+            <div style={{ background:"var(--navy,#0B1D33)", borderRadius:12, padding:"22px 26px" }}>
+              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--cream,#F2EBD9)", marginBottom:10 }}>
+                {detail.profile?.organization_name || vendorName}
               </div>
-              {detail.profile?.impact_statement && (
-                <div style={{ padding:"12px 16px", background:"var(--teal-bg,#E4F2EB)", borderRadius:10, border:"1px solid rgba(24,102,74,.2)", fontSize:14, color:"var(--teal,#18664A)", lineHeight:1.7, fontStyle:"italic" }}>
-                  "{detail.profile.impact_statement}"
-                </div>
-              )}
-              {detail.profile?.description && (
-                <div style={{ fontSize:13, color:"var(--body,#253446)", lineHeight:1.7, padding:"14px 16px", background:"var(--cream,#F2EBD9)", borderRadius:10 }}>
-                  {detail.profile.description}
-                </div>
-              )}
-              {detail.esg?.length > 0 && (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                {detail.profile?.is_women_owned && <span style={{ fontSize:10, fontWeight:700, color:"#f9a8d4", background:"rgba(244,114,182,.2)", padding:"3px 9px", borderRadius:99 }}>👩 Women-owned</span>}
+                {detail.profile?.verification_status==="verified" && <span style={{ fontSize:10, fontWeight:700, color:"#5FCFA0", background:"rgba(95,207,160,.15)", padding:"3px 9px", borderRadius:99 }}>✓ Platform verified</span>}
+                {detail.profile?.gstin_verified && <span style={{ fontSize:10, fontWeight:700, color:"#5FCFA0", background:"rgba(95,207,160,.15)", padding:"3px 9px", borderRadius:99 }}>✓ GST verified</span>}
+                {detail.profile?.pan_verified && <span style={{ fontSize:10, fontWeight:700, color:"#5FCFA0", background:"rgba(95,207,160,.15)", padding:"3px 9px", borderRadius:99 }}>✓ PAN verified</span>}
+                {detail.profile?.location && <span style={{ fontSize:12, color:"rgba(242,235,217,.6)" }}>📍 {detail.profile.location}</span>}
+                {detail.profile?.esg_band && <span style={{ fontSize:12, fontWeight:700, color:"#5FCFA0" }}>🌱 {detail.profile.esg_band} · {detail.profile.esg_score}/100</span>}
+                {detail.rating?.average_rating > 0 && <span style={{ fontSize:12, color:"#F5B342" }}>⭐ {detail.rating.average_rating.toFixed(1)} ({detail.rating.total_reviews} reviews)</span>}
+              </div>
+            </div>
+
+            {detail.profile?.impact_statement && (
+              <div style={{ padding:"13px 16px", background:"var(--teal-bg,#E4F2EB)", borderRadius:10, border:"1px solid rgba(24,102,74,.2)", fontSize:14, color:"var(--teal,#18664A)", lineHeight:1.75, fontStyle:"italic" }}>
+                "{detail.profile.impact_statement}"
+              </div>
+            )}
+            {detail.profile?.description && (
+              <div style={{ fontSize:13, color:"var(--body,#253446)", lineHeight:1.75, padding:"14px 16px", background:"var(--cream,#F2EBD9)", borderRadius:10 }}>
+                {detail.profile.description}
+              </div>
+            )}
+
+            {/* ── Business overview ── */}
+            {(() => {
+              const p = detail.profile;
+              const cats   = parseJSON(p?.service_categories);
+              const certs  = parseJSON(p?.certification_types);
+              const sdgs   = parseJSON(p?.sdg_tags);
+              const cities = parseJSON(p?.cities_served);
+              const hasInfo = p?.year_founded||p?.team_size_band||p?.annual_turnover_band||p?.website||cats.length||certs.length||sdgs.length||cities.length;
+              if (!hasInfo) return null;
+              return (
                 <div>
-                  <div style={{ fontSize:11, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:12 }}>ESG impact</div>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10 }}>
+                  <SectionHead>Business overview</SectionHead>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                    {p.year_founded && <InfoRow label="Founded" value={p.year_founded}/>}
+                    {p.team_size_band && <InfoRow label="Team size" value={p.team_size_band}/>}
+                    {p.annual_turnover_band && <InfoRow label="Annual turnover" value={p.annual_turnover_band}/>}
+                    {p.website && <InfoRow label="Website" value={<a href={p.website} target="_blank" rel="noreferrer" style={{ color:"var(--teal,#18664A)", textDecoration:"none" }}>{p.website}</a>}/>}
+                  </div>
+                  {cats.length > 0  && <TagRow label="Service categories" tags={cats} color="var(--navy,#0B1D33)" bg="var(--cream,#F2EBD9)"/>}
+                  {cities.length > 0 && <TagRow label="Cities served" tags={cities} color="var(--navy,#0B1D33)" bg="var(--cream,#F2EBD9)"/>}
+                  {certs.length > 0  && <TagRow label="Certifications" tags={certs.map(c=>c.replace(/_/g," "))} color="var(--teal,#18664A)" bg="var(--teal-bg,#E4F2EB)"/>}
+                  {sdgs.length > 0   && <TagRow label="SDG alignment" tags={sdgs} color="var(--amber,#B8720A)" bg="var(--amber-bg,#FDF3E4)"/>}
+                </div>
+              );
+            })()}
+
+            {/* ── ESG Score Summary ── */}
+            {detail.esg?.length > 0 && (() => {
+              const e = detail.esg[0];
+              const sc = s => s>=70?"var(--teal,#18664A)":s>=40?"var(--amber,#B8720A)":"var(--red,#B84232)";
+              return (
+                <div>
+                  <SectionHead>ESG score breakdown</SectionHead>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
                     {[
-                      { l:"Jobs created", v:detail.esg[0].jobs_created||0, c:"var(--teal,#18664A)", i:"👷" },
-                      { l:"Women employed", v:`${detail.esg[0].women_employees_pct||0}%`, c:"#db2777", i:"👩" },
-                      { l:"ESG score", v:`${detail.esg[0].esg_score}/100`, c:"#5FCFA0", i:"🌱" },
-                    ].map(m=>(
-                      <div key={m.l} style={{ padding:14, background:"var(--cream,#F2EBD9)", borderRadius:10, textAlign:"center" }}>
-                        <div style={{ fontSize:20, marginBottom:6 }}>{m.i}</div>
-                        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:18, fontWeight:700, color:m.c, marginBottom:3 }}>{m.v||"—"}</div>
-                        <div style={{ fontSize:11, color:"var(--muted,#67788D)" }}>{m.l}</div>
+                      { l:"Overall", v:e.esg_score, sub:e.esg_band },
+                      { l:"Environmental", v:e.e_score, sub:"E pillar" },
+                      { l:"Social", v:e.s_score, sub:"S pillar" },
+                      { l:"Governance", v:e.g_score, sub:"G pillar" },
+                    ].map(s=>(
+                      <div key={s.l} style={{ background:"var(--cream,#F2EBD9)", borderRadius:10, padding:"14px 10px", textAlign:"center" }}>
+                        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:sc(s.v||0), lineHeight:1 }}>{Math.round(s.v||0)}</div>
+                        <div style={{ fontSize:9, color:"var(--muted,#67788D)", textTransform:"uppercase", letterSpacing:".07em", marginTop:4 }}>{s.l}</div>
+                        {s.sub && <div style={{ fontSize:10, color:sc(s.v||0), marginTop:2, fontWeight:600 }}>{s.sub}</div>}
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
-              {/* Contact details */}
-              {(detail.profile?.phone || detail.profile?.email) && (
-                <div style={{ borderTop:"1px solid var(--border,#D4C9B5)", paddingTop:16 }}>
-                  {!showDetailContact
-                    ? <button onClick={()=>setShowDetailContact(true)}
-                        style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", color:"var(--teal,#18664A)", fontSize:13, fontWeight:600, padding:"10px 20px", borderRadius:6, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", width:"100%" }}>
-                        📞 Show contact details
-                      </button>
-                    : <div style={{ background:"var(--cream,#F2EBD9)", borderRadius:10, padding:"14px 18px", display:"flex", flexDirection:"column", gap:10 }}>
-                        <div style={{ fontSize:11, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:2 }}>Contact</div>
-                        {detail.profile.email && (
-                          <a href={`mailto:${detail.profile.email}`}
-                            style={{ display:"flex", alignItems:"center", gap:10, color:"var(--navy,#0B1D33)", textDecoration:"none", fontSize:14, fontWeight:500 }}>
-                            <span style={{ fontSize:18 }}>✉️</span> {detail.profile.email}
-                          </a>
-                        )}
-                        {detail.profile.phone && (
-                          <a href={`tel:${detail.profile.phone}`}
-                            style={{ display:"flex", alignItems:"center", gap:10, color:"var(--navy,#0B1D33)", textDecoration:"none", fontSize:14, fontWeight:500 }}>
-                            <span style={{ fontSize:18 }}>📞</span> {detail.profile.phone}
-                          </a>
-                        )}
-                      </div>
-                  }
+              );
+            })()}
+
+            {/* ── ESG Details ── */}
+            {detail.esg?.length > 0 && (() => {
+              const e = detail.esg[0];
+              const envRows = [
+                { l:"Renewable energy",        v:e.renewable_energy_pct,        unit:"%" },
+                { l:"Waste recycled",           v:e.waste_recycling_pct,         unit:"%" },
+                { l:"EV fleet",                 v:e.ev_fleet_pct,                unit:"%" },
+                { l:"Biodegradable packaging",  v:e.biodegradable_packaging_pct, unit:"%" },
+                { l:"Carbon saved (tCO₂)",      v:e.carbon_saved,                unit:"" },
+                { l:"Carbon offset programme",  v:e.carbon_offset_programme,     bool:true },
+              ].filter(r => r.bool ? r.v : (r.v||0)>0);
+              const socRows = [
+                { l:"Total employees",          v:e.total_employees,       unit:"" },
+                { l:"Women employees",          v:e.women_employees_pct,   unit:"%" },
+                { l:"Women in leadership",      v:e.women_leadership_pct,  unit:"%" },
+                { l:"SC/ST/OBC employees",      v:e.sc_st_obc_pct,         unit:"%" },
+                { l:"PwD employees",            v:e.pwd_employees_pct,     unit:"%" },
+                { l:"Jobs created",             v:e.jobs_created,          unit:"" },
+                { l:"Jobs for marginalised",    v:e.jobs_marginalised,     unit:"" },
+                { l:"Living wage compliance",   v:e.living_wage_compliance, bool:true },
+                { l:"Health insurance coverage",v:e.health_insurance_pct,  unit:"%" },
+                { l:"Training hrs / employee",  v:e.training_hours_per_emp,unit:"hrs" },
+                { l:"Community sourcing",       v:e.community_sourcing_pct,unit:"%" },
+                { l:"Local sourcing",           v:e.local_sourcing_pct,    unit:"%" },
+              ].filter(r => r.bool ? r.v : (r.v||0)>0);
+              const govRows = [
+                { l:"Women ownership",    v:e.women_ownership_pct, unit:"%" },
+                { l:"Women on board",     v:e.women_board_pct,     unit:"%" },
+                { l:"Grievance mechanism",v:e.grievance_mechanism, bool:true },
+                { l:"Annual report filed",v:e.annual_report_filed, bool:true },
+                { l:"Data privacy policy",v:e.data_privacy_policy, bool:true },
+              ].filter(r => r.bool ? r.v : (r.v||0)>0);
+              if (!envRows.length && !socRows.length && !govRows.length) return null;
+              return (
+                <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                  {envRows.length > 0 && <div><SectionHead>🌍 Environmental</SectionHead><EsgTable rows={envRows}/></div>}
+                  {socRows.length > 0 && <div><SectionHead>👥 Social</SectionHead><EsgTable rows={socRows}/></div>}
+                  {govRows.length > 0 && <div><SectionHead>🏛 Governance</SectionHead><EsgTable rows={govRows}/></div>}
                 </div>
-              )}
-            </div>
-          ) : null
-        }
-      </Modal>
+              );
+            })()}
+
+            {/* ── ESG History ── */}
+            {detail.esg?.length > 1 && (
+              <div>
+                <SectionHead>ESG score history</SectionHead>
+                <div style={{ border:"1px solid var(--border,#D4C9B5)", borderRadius:10, overflow:"hidden" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                    <thead>
+                      <tr style={{ background:"var(--cream,#F2EBD9)" }}>
+                        {["Year","Overall","E","S","G","Band"].map(h=>(
+                          <th key={h} style={{ padding:"9px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"var(--muted,#67788D)", letterSpacing:".07em", textTransform:"uppercase", borderBottom:"1px solid var(--border,#D4C9B5)" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.esg.map((row,i)=>{
+                        const c = (row.esg_score||0)>=70?"var(--teal,#18664A)":(row.esg_score||0)>=40?"var(--amber,#B8720A)":"var(--red,#B84232)";
+                        return (
+                          <tr key={row.id} style={{ borderBottom:i<detail.esg.length-1?"1px solid var(--border,#D4C9B5)":"none", background:i===0?"rgba(24,102,74,.04)":"white" }}>
+                            <td style={{ padding:"9px 14px", fontWeight:600, color:"var(--navy,#0B1D33)" }}>{row.year||new Date(row.created_at).getFullYear()}</td>
+                            <td style={{ padding:"9px 14px", fontWeight:700, color:c }}>{Math.round(row.esg_score||0)}</td>
+                            <td style={{ padding:"9px 14px", color:"var(--teal,#18664A)" }}>{Math.round(row.e_score||0)}</td>
+                            <td style={{ padding:"9px 14px", color:"#db2777" }}>{Math.round(row.s_score||0)}</td>
+                            <td style={{ padding:"9px 14px", color:"var(--navy,#0B1D33)" }}>{Math.round(row.g_score||0)}</td>
+                            <td style={{ padding:"9px 14px", fontSize:11, color:"var(--muted,#67788D)" }}>{row.esg_band||"—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── Contact ── */}
+            {(detail.profile?.phone || detail.profile?.email) && (
+              <div style={{ borderTop:"1px solid var(--border,#D4C9B5)", paddingTop:16 }}>
+                {!showContact
+                  ? <button onClick={onShowContact}
+                      style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", color:"var(--teal,#18664A)", fontSize:13, fontWeight:600, padding:"10px 20px", borderRadius:6, cursor:"pointer", fontFamily:"'DM Sans',sans-serif", width:"100%" }}>
+                      📞 Show contact details
+                    </button>
+                  : <div style={{ background:"var(--cream,#F2EBD9)", borderRadius:10, padding:"14px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+                      <div style={{ fontSize:11, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:2 }}>Contact</div>
+                      {detail.profile.email && (
+                        <a href={`mailto:${detail.profile.email}`} style={{ display:"flex", alignItems:"center", gap:10, color:"var(--navy,#0B1D33)", textDecoration:"none", fontSize:14, fontWeight:500 }}>
+                          <span style={{ fontSize:18 }}>✉️</span> {detail.profile.email}
+                        </a>
+                      )}
+                      {detail.profile.phone && (
+                        <a href={`tel:${detail.profile.phone}`} style={{ display:"flex", alignItems:"center", gap:10, color:"var(--navy,#0B1D33)", textDecoration:"none", fontSize:14, fontWeight:500 }}>
+                          <span style={{ fontSize:18 }}>📞</span> {detail.profile.phone}
+                        </a>
+                      )}
+                    </div>
+                }
+              </div>
+            )}
+
+          </div>
+        ) : null
+      }
+    </Modal>
+  );
+}
+
+/* ─────────────────────────────────── Vendor detail helpers (module-level) ── */
+function SectionHead({ children }) {
+  return (
+    <div style={{ fontSize:11, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:10, paddingBottom:6, borderBottom:"1px solid var(--border,#D4C9B5)" }}>
+      {children}
+    </div>
+  );
+}
+function InfoRow({ label, value }) {
+  return (
+    <div style={{ background:"var(--cream,#F2EBD9)", borderRadius:8, padding:"10px 14px" }}>
+      <div style={{ fontSize:10, fontWeight:700, letterSpacing:".07em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:3 }}>{label}</div>
+      <div style={{ fontSize:13, fontWeight:600, color:"var(--navy,#0B1D33)" }}>{value}</div>
+    </div>
+  );
+}
+function TagRow({ label, tags, color, bg }) {
+  if (!tags?.length) return null;
+  return (
+    <div style={{ marginTop:10 }}>
+      <div style={{ fontSize:10, fontWeight:700, letterSpacing:".07em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:6 }}>{label}</div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+        {tags.map((t,i)=>(
+          <span key={i} style={{ fontSize:11, fontWeight:600, color, background:bg, padding:"3px 10px", borderRadius:99 }}>{t}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+function EsgTable({ rows }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+      {rows.map((r,i)=>(
+        <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 14px", background: i%2===0?"var(--cream,#F2EBD9)":"white", borderRadius:6 }}>
+          <span style={{ fontSize:13, color:"var(--body,#253446)" }}>{r.l}</span>
+          <span style={{ fontSize:13, fontWeight:700, color:"var(--navy,#0B1D33)" }}>
+            {r.bool ? (r.v ? "✓ Yes" : "✗ No") : `${r.v}${r.unit}`}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

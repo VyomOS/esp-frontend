@@ -345,6 +345,7 @@ export default function AdminDashboard() {
           { id:"impact",    label:"Impact",     icon:"🌱" },
           { id:"notify",    label:"Notify",     icon:"📢" },
           { id:"analytics", label:"Analytics",  icon:"📊" },
+          { id:"team",      label:"Team",       icon:"🔑" },
         ].map(t=>{
           const active = t.id === tab;
           return (
@@ -362,6 +363,7 @@ export default function AdminDashboard() {
       {tab==="impact"    && <AdminImpact    toast={toast}/>}
       {tab==="notify"    && <AdminNotify    toast={toast}/>}
       {tab==="analytics" && <AdminAnalytics toast={toast}/>}
+      {tab==="team"      && <AdminTeam      toast={toast}/>}
     </Layout>
   );
 }
@@ -393,7 +395,7 @@ function AdminOverview({ toast, nav }) {
   );
 
   const statCards = [
-    { label:"Total users",       value: stats?.total_users||0,      color:"var(--navy,#0B1D33)" },
+    { label:"Vendors + Buyers",   value: stats?.total_users||0,      color:"var(--navy,#0B1D33)" },
     { label:"Verified vendors",  value: stats?.verified_vendors||0, color:"var(--teal,#18664A)" },
     { label:"Active RFPs",       value: stats?.active_requests||0,  color:"#6384ff" },
     { label:"Total buyers",      value: stats?.total_buyers||0,     color:"var(--amber,#B8720A)" },
@@ -648,20 +650,40 @@ function AdminImpact({ toast }) {
   const [impact, setImpact]       = useState(null);
   const [breakdown, setBreakdown] = useState([]);
   const [aiStory, setAiStory]     = useState("");
+  const [esgDist, setEsgDist]     = useState(null);
   const [loading, setLoading]     = useState(true);
 
   useEffect(()=>{
-    Promise.allSettled([adminAPI.impact(), adminAPI.esgBreakdown(), adminAPI.aiImpactStory()])
-      .then(([imp,brk,story])=>{
+    Promise.allSettled([adminAPI.impact(), adminAPI.esgBreakdown(), adminAPI.aiImpactStory(), adminAPI.analyticsEsgDistribution()])
+      .then(([imp,brk,story,esd])=>{
         const i = imp.status==="fulfilled" ? imp.value.data : null;
         const b = brk.status==="fulfilled" ? brk.value.data : [];
         setImpact(i); setBreakdown(b);
-        if (story.status==="fulfilled") {
-          const d = story.value.data;
-          setAiStory(d.story || "");
-        }
+        if (story.status==="fulfilled") setAiStory(story.value.data.story || "");
+        if (esd.status==="fulfilled")   setEsgDist(esd.value.data);
       }).finally(()=>setLoading(false));
   },[]);
+
+  const downloadCSV = () => {
+    if (!impact) return;
+    const rows = [
+      ["Metric","Value"],
+      ["Verified vendors", impact.verified_vendors||0],
+      ["Jobs created", impact.total_jobs_created||0],
+      ["Women employed", impact.total_women_employed||0],
+      ["Carbon saved (tonnes)", (impact.total_carbon_saved||0).toFixed(2)],
+      ["Active RFPs", impact.total_requests||0],
+      ["Total buyers", impact.total_buyers||0],
+      [],
+      ["Vendor","Jobs","Women employed","Carbon saved"],
+      ...breakdown.map(b=>[b.vendor||"", b.jobs||0, b.women||0, (b.carbon||0).toFixed(2)]),
+    ];
+    const csv = rows.map(r=>r.join(",")).join("\n");
+    const blob = new Blob([csv], { type:"text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download="esp_impact_report.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) return <div className="skeleton" style={{height:400,borderRadius:12}}/>;
 
@@ -670,6 +692,20 @@ function AdminImpact({ toast }) {
 
   return (
     <div style={{ animation:"fadeUp .4s ease", display:"flex", flexDirection:"column", gap:22 }}>
+      {/* Header with download */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div>
+          <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Platform impact</h2>
+          <p style={{ fontSize:13, color:"var(--muted,#67788D)", marginTop:4 }}>Aggregated ESG and social impact across all verified vendors</p>
+        </div>
+        <button onClick={downloadCSV} disabled={!impact}
+          style={{ display:"flex", alignItems:"center", gap:6, background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"10px 18px", fontSize:13, fontWeight:600, cursor:impact?"pointer":"not-allowed", fontFamily:"'DM Sans',sans-serif", opacity:impact?1:.5 }}
+          onMouseEnter={e=>{ if(impact) e.currentTarget.style.background="var(--teal,#18664A)"; }}
+          onMouseLeave={e=>{ e.currentTarget.style.background="var(--navy,#0B1D33)"; }}>
+          ⬇ Download CSV
+        </button>
+      </div>
+
       {/* AI story hero */}
       {aiStory && (
         <div style={{ background:"var(--navy,#0B1D33)", borderRadius:14, padding:"24px 28px", display:"flex", gap:14, alignItems:"flex-start" }}>
@@ -725,6 +761,51 @@ function AdminImpact({ toast }) {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ESG score histogram */}
+      {esgDist && (esgDist.histogram||[]).length > 0 && (
+        <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:14, padding:"24px 28px", boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--navy,#0B1D33)" }}>ESG score distribution</div>
+            {esgDist.platform_avg > 0 && <span style={{ fontSize:12, fontWeight:700, color:"var(--teal,#18664A)" }}>Platform avg: {esgDist.platform_avg.toFixed(1)}/100</span>}
+          </div>
+          {/* Band chips */}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
+            {(esgDist.distribution||[]).map(b=>{
+              const col = b.band?.includes("Leader")?"var(--teal,#18664A)":b.band?.includes("Progressing")?"#6384ff":b.band?.includes("Developing")?"var(--amber,#B8720A)":"var(--muted,#67788D)";
+              return (
+                <div key={b.band} style={{ display:"flex", alignItems:"center", gap:8, background:"var(--cream,#F2EBD9)", borderRadius:8, padding:"8px 14px" }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:col }}/>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{b.count} vendors</div>
+                    <div style={{ fontSize:10, color:"var(--muted,#67788D)" }}>{b.band}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Histogram bars */}
+          <div style={{ fontSize:11, fontWeight:700, letterSpacing:".07em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:10 }}>Score histogram (0 – 100)</div>
+          <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:80 }}>
+            {esgDist.histogram.map((h,i)=>{
+              const max = Math.max(...esgDist.histogram.map(x=>x.count), 1);
+              const pct = Math.max((h.count/max)*100, h.count?4:0);
+              const score = i*10+5;
+              const col = score>=70?"var(--teal,#18664A)":score>=40?"var(--amber,#B8720A)":"var(--red,#B84232)";
+              return (
+                <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                  {h.count > 0 && <div style={{ fontSize:9, color:"var(--muted,#67788D)" }}>{h.count}</div>}
+                  <div title={`${h.range}: ${h.count}`}
+                    style={{ width:"100%", height:`${pct}%`, background:col, borderRadius:"3px 3px 0 0", opacity:.8, minHeight:h.count?4:0, transition:"height .8s" }}/>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:"var(--muted,#67788D)", marginTop:4, paddingTop:4, borderTop:"1px solid var(--border,#D4C9B5)" }}>
+            {["0","10","20","30","40","50","60","70","80","90","100"].map(n=><span key={n}>{n}</span>)}
+          </div>
         </div>
       )}
     </div>
@@ -958,12 +1039,18 @@ function AdminAnalytics({ toast }) {
       {/* Funnels */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
         <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:14, padding:"22px 26px", boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
-          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:16 }}>Vendor funnel</div>
-          <FunnelBar stages={vendorFunnel?.stages || vendorFunnel}/>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Vendor funnel</div>
+            {vendorFunnel?.total_vendors > 0 && <span style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{vendorFunnel.total_vendors} total</span>}
+          </div>
+          <FunnelBar stages={vendorFunnel?.funnel || []}/>
         </div>
         <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:14, padding:"22px 26px", boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
-          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:16 }}>RFP funnel</div>
-          <FunnelBar stages={rfpFunnel?.stages || rfpFunnel}/>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)" }}>RFP funnel</div>
+            {rfpFunnel?.total_rfps > 0 && <span style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{rfpFunnel.total_rfps} total</span>}
+          </div>
+          <FunnelBar stages={rfpFunnel?.funnel || []}/>
         </div>
       </div>
 
@@ -974,25 +1061,51 @@ function AdminAnalytics({ toast }) {
             <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)" }}>ESG band distribution</div>
             {esgDist.platform_avg && <span style={{ fontSize:12, fontWeight:700, color:"var(--teal,#18664A)" }}>Platform avg: {esgDist.platform_avg.toFixed(1)}/100</span>}
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
-            {(esgDist.bands || []).map(b=>(
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10, marginBottom:20 }}>
+            {(esgDist.distribution || []).map(b=>(
               <div key={b.band} style={{ textAlign:"center", padding:"14px", background:"var(--cream,#F2EBD9)", borderRadius:10 }}>
                 <div style={{ fontFamily:"'Playfair Display',serif", fontSize:26, fontWeight:700, color:"var(--teal,#18664A)" }}>{b.count}</div>
-                <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:4 }}>{b.band}</div>
+                <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:4, lineHeight:1.3 }}>{b.band}</div>
+                {b.avg_score > 0 && <div style={{ fontSize:10, color:"var(--teal,#18664A)", marginTop:3 }}>avg {b.avg_score.toFixed(0)}/100</div>}
               </div>
             ))}
           </div>
+          {/* ESG score histogram */}
+          {(esgDist.histogram||[]).length > 0 && (
+            <div>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:".07em", textTransform:"uppercase", color:"var(--muted,#67788D)", marginBottom:10 }}>Score distribution (0–100)</div>
+              <div style={{ display:"flex", alignItems:"flex-end", gap:3, height:64 }}>
+                {esgDist.histogram.map((h,i)=>{
+                  const max = Math.max(...esgDist.histogram.map(x=>x.count), 1);
+                  const pct = (h.count/max)*100;
+                  return (
+                    <div key={i} title={`${h.range}: ${h.count} vendors`}
+                      style={{ flex:1, height:`${pct}%`, minHeight:h.count?3:0, background:"var(--teal,#18664A)", borderRadius:"2px 2px 0 0", opacity:.7+(.3*pct/100), cursor:"default", transition:"height .6s" }}/>
+                  );
+                })}
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:"var(--muted,#67788D)", marginTop:4 }}>
+                <span>0</span><span>50</span><span>100</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* AI usage */}
       {aiUsage && (
         <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:14, padding:"22px 26px", boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
-          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:16 }}>AI endpoint usage</div>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)" }}>AI endpoint usage</div>
+            <div style={{ display:"flex", gap:16 }}>
+              {aiUsage.ai_calls?.total_calls > 0 && <span style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{aiUsage.ai_calls.total_calls} total calls</span>}
+              {aiUsage.ai_calls?.est_cost_usd > 0 && <span style={{ fontSize:12, fontWeight:700, color:"var(--amber,#B8720A)" }}>${aiUsage.ai_calls.est_cost_usd.toFixed(4)} est. cost</span>}
+            </div>
+          </div>
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {(aiUsage.endpoints || Object.entries(aiUsage).filter(([k])=>k!=="total_calls")).map((ep,i)=>{
-              const label = Array.isArray(ep) ? ep[0] : ep.endpoint;
-              const calls = Array.isArray(ep) ? ep[1] : ep.calls;
+            {(aiUsage.by_endpoint || []).map((ep,i)=>{
+              const label = ep.endpoint;
+              const calls = ep.calls;
               return (
                 <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 12px", background:"var(--cream,#F2EBD9)", borderRadius:8 }}>
                   <span style={{ fontSize:13, color:"var(--body,#253446)" }}>{label}</span>
@@ -1031,6 +1144,162 @@ function AdminAnalytics({ toast }) {
             </div>
         }
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────── TEAM ── */
+const PERM_ROLES = [
+  { value:"full_access",        label:"Full access",        desc:"All admin capabilities" },
+  { value:"approvals_only",     label:"Approvals only",     desc:"Can approve/reject vendors" },
+  { value:"notifications_only", label:"Notifications only", desc:"Can send broadcasts" },
+  { value:"view_only",          label:"View only",          desc:"Read-only access to all data" },
+];
+
+function AdminTeam({ toast }) {
+  const [admins, setAdmins]     = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm]         = useState({ name:"", email:"", password:"", permission_role:"full_access" });
+  const [saving, setSaving]     = useState(false);
+  const [editPerm, setEditPerm] = useState(null);
+
+  const load = () => adminAPI.listAdmins().then(r=>setAdmins(r.data)).catch(()=>{}).finally(()=>setLoading(false));
+  useEffect(()=>{ load(); },[]);
+
+  const createAdmin = async () => {
+    if (!form.name.trim() || !form.email.includes("@") || form.password.length < 8) {
+      toast.error("Name, valid email and password (8+ chars) required"); return;
+    }
+    setSaving(true);
+    try {
+      await adminAPI.createAdmin(form);
+      toast.success(`Admin account created for ${form.email}`);
+      setShowForm(false);
+      setForm({ name:"", email:"", password:"", permission_role:"full_access" });
+      load();
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed to create admin"); }
+    finally { setSaving(false); }
+  };
+
+  const updatePerm = async (adminId, role) => {
+    try { await adminAPI.updateAdminPermissions(adminId, { permission_role: role }); toast.success("Permissions updated"); setEditPerm(null); load(); }
+    catch { toast.error("Failed to update permissions"); }
+  };
+
+  const removeAdmin = async (admin) => {
+    try { await adminAPI.removeAdmin(admin.id); toast.success(`${admin.name} removed`); load(); }
+    catch { toast.error("Failed"); }
+  };
+
+  const permColor = r => r==="full_access"?"var(--navy,#0B1D33)":r==="approvals_only"?"var(--teal,#18664A)":r==="notifications_only"?"#6384ff":"var(--muted,#67788D)";
+  const permBg    = r => r==="full_access"?"rgba(11,29,51,.1)":r==="approvals_only"?"var(--teal-bg,#E4F2EB)":r==="notifications_only"?"rgba(99,132,255,.1)":"rgba(103,120,141,.1)";
+
+  if (loading) return <div className="skeleton" style={{height:300,borderRadius:12}}/>;
+
+  return (
+    <div style={{ animation:"fadeUp .4s ease" }}>
+      {/* Header */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24 }}>
+        <div>
+          <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Admin team</h2>
+          <p style={{ fontSize:13, color:"var(--muted,#67788D)", marginTop:4 }}>Manage who has access and what they can do</p>
+        </div>
+        <button onClick={()=>setShowForm(s=>!s)}
+          style={{ background:showForm?"var(--cream,#F2EBD9)":"var(--navy,#0B1D33)", color:showForm?"var(--navy,#0B1D33)":"var(--cream,#F2EBD9)", border:showForm?"1px solid var(--border,#D4C9B5)":"none", borderRadius:6, padding:"10px 20px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+          {showForm ? "Cancel" : "+ Add admin"}
+        </button>
+      </div>
+
+      {/* Add admin form */}
+      {showForm && (
+        <div style={{ background:"white", border:"1.5px solid var(--teal,#18664A)", borderRadius:14, padding:"24px 28px", marginBottom:24, animation:"fadeUp .3s ease" }}>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:18 }}>New admin account</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:16 }}>
+            {[
+              { key:"name", label:"Full name", type:"text", ph:"Jane Admin" },
+              { key:"email", label:"Work email", type:"email", ph:"admin@evencargo.in" },
+              { key:"password", label:"Password (8+ chars)", type:"password", ph:"Secure password" },
+            ].map(f=>(
+              <div key={f.key}>
+                <label style={{ fontSize:11, fontWeight:700, color:"var(--navy,#0B1D33)", letterSpacing:".08em", textTransform:"uppercase", display:"block", marginBottom:6 }}>{f.label}</label>
+                <input type={f.type} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph}
+                  style={{ width:"100%", padding:"10px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"var(--cream,#F2EBD9)", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:6, outline:"none" }}/>
+              </div>
+            ))}
+            <div>
+              <label style={{ fontSize:11, fontWeight:700, color:"var(--navy,#0B1D33)", letterSpacing:".08em", textTransform:"uppercase", display:"block", marginBottom:6 }}>Access level</label>
+              <select value={form.permission_role} onChange={e=>setForm(p=>({...p,permission_role:e.target.value}))}
+                style={{ width:"100%", padding:"10px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"var(--cream,#F2EBD9)", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:6, outline:"none", cursor:"pointer" }}>
+                {PERM_ROLES.map(r=><option key={r.value} value={r.value}>{r.label} — {r.desc}</option>)}
+              </select>
+            </div>
+          </div>
+          <button onClick={createAdmin} disabled={saving}
+            style={{ background:"var(--teal,#18664A)", color:"white", border:"none", borderRadius:6, padding:"12px 28px", fontSize:14, fontWeight:600, cursor:saving?"wait":"pointer", fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:8 }}>
+            {saving ? <><span className="spinner" style={{width:14,height:14}}/> Creating…</> : "Create admin account →"}
+          </button>
+        </div>
+      )}
+
+      {/* Role legend */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:10, marginBottom:24 }}>
+        {PERM_ROLES.map(r=>(
+          <div key={r.value} style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:10, padding:"12px 16px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:4 }}>
+              <div style={{ width:8, height:8, borderRadius:"50%", background:permColor(r.value), flexShrink:0 }}/>
+              <span style={{ fontSize:12, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{r.label}</span>
+            </div>
+            <div style={{ fontSize:11, color:"var(--muted,#67788D)" }}>{r.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Admin list */}
+      {admins.length === 0
+        ? <Empty icon="🔑" title="No additional admins yet" desc="Create admin accounts above and assign access levels"/>
+        : <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {admins.map(a=>(
+              <div key={a.id} style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"16px 22px", display:"flex", alignItems:"center", gap:16, opacity:a.is_active?1:.55 }}>
+                <div style={{ width:40, height:40, borderRadius:"50%", background:"var(--navy,#0B1D33)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, color:"var(--cream,#F2EBD9)", fontWeight:700, flexShrink:0 }}>
+                  {a.name.charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:2 }}>
+                    <span style={{ fontSize:14, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{a.name}</span>
+                    {!a.is_active && <span style={{ fontSize:10, fontWeight:700, color:"var(--red,#B84232)", background:"var(--red-bg,#FAEBE8)", padding:"1px 7px", borderRadius:99 }}>Deactivated</span>}
+                  </div>
+                  <div style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{a.email}</div>
+                </div>
+                {editPerm?.id === a.id
+                  ? <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                      <select value={editPerm.role} onChange={e=>setEditPerm(p=>({...p,role:e.target.value}))}
+                        style={{ padding:"7px 12px", fontSize:12, fontFamily:"'DM Sans',sans-serif", background:"var(--cream,#F2EBD9)", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:6, outline:"none" }}>
+                        {PERM_ROLES.map(r=><option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                      <button onClick={()=>updatePerm(a.id,editPerm.role)} style={{ background:"var(--teal,#18664A)", color:"white", border:"none", borderRadius:6, padding:"7px 14px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Save</button>
+                      <button onClick={()=>setEditPerm(null)} style={{ background:"none", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, padding:"7px 12px", fontSize:12, color:"var(--muted,#67788D)", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Cancel</button>
+                    </div>
+                  : <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                      <span style={{ fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:99, background:permBg(a.permission_role), color:permColor(a.permission_role) }}>
+                        {PERM_ROLES.find(r=>r.value===a.permission_role)?.label||"Full access"}
+                      </span>
+                      <button onClick={()=>setEditPerm({ id:a.id, role:a.permission_role })}
+                        style={{ background:"none", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, padding:"5px 12px", fontSize:11, fontWeight:600, color:"var(--muted,#67788D)", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                        Change
+                      </button>
+                      {a.is_active && (
+                        <button onClick={()=>removeAdmin(a)}
+                          style={{ background:"none", border:"1px solid rgba(184,66,50,.3)", borderRadius:6, padding:"5px 10px", fontSize:11, fontWeight:600, color:"var(--red,#B84232)", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                }
+              </div>
+            ))}
+          </div>
+      }
     </div>
   );
 }
