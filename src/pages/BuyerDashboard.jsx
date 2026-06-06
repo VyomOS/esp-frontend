@@ -12,6 +12,13 @@ const SERVICE_CATEGORIES = [
   "Food & Catering","Textiles & Apparel","IT & Digital Services",
   "Green & Sustainability","Handicrafts & Artisan","Healthcare & Wellness","Construction & Fitout",
 ];
+const PROCUREMENT_INDUSTRIES = [
+  { label:"Healthcare", category:"Healthcare & Wellness", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
+  { label:"Automotive", category:"Logistics & Delivery", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
+  { label:"ITES", category:"IT & Digital Services", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
+  { label:"Gifting", category:"Handicrafts & Artisan", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
+  { label:"Food", category:"Food & Catering", terms:["food","catering","snacks","meals","canteen","beverage","lunch","kitchen"] },
+];
 const CERT_TYPES = ["women_led","msme_udyam","sc_st_owned","shg","social_enterprise","cooperative","fair_trade","weps_signatory"];
 const BID_COLOR  = { submitted:"var(--teal,#18664A)", under_review:"var(--amber,#B8720A)", shortlisted:"#6384ff", awarded:"var(--teal,#18664A)", declined:"var(--red,#B84232)" };
 const BID_ICON   = { submitted:"📨", under_review:"👀", shortlisted:"⭐", awarded:"🏆", declined:"✗" };
@@ -28,6 +35,21 @@ function fixNotifLink(link, category) {
 function parseJSON(val, fallback = []) {
   if (Array.isArray(val)) return val;
   try { return JSON.parse(val || "[]"); } catch { return fallback; }
+}
+function wordCount(value) {
+  return value.trim().split(/\s+/).filter(Boolean).length;
+}
+function procurementSuggestions(query) {
+  const q = query.toLowerCase();
+  if (wordCount(query) < 3) return [];
+  return PROCUREMENT_INDUSTRIES
+    .map(ind => {
+      const hits = ind.terms.filter(t => q.includes(t)).length;
+      return { ...ind, hits };
+    })
+    .filter(ind => ind.hits > 0)
+    .sort((a,b)=>b.hits-a.hits)
+    .slice(0,3);
 }
 
 /* ─────────────────────────────────── Main router ── */
@@ -72,6 +94,8 @@ function BuyerHome({ toast, nav }) {
   const [notifs, setNotifs] = useState([]);
   const [aiSuggs, setAiSuggs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [procurementQuery, setProcurementQuery] = useState("");
+  const [activeIndustry, setActiveIndustry] = useState("");
 
   useEffect(()=>{
     Promise.allSettled([
@@ -94,6 +118,14 @@ function BuyerHome({ toast, nav }) {
   const active     = reqs.filter(r=>r.status==="active");
   const totalBids  = reqs.reduce((s,r)=>s+(r.bid_count||0),0);
   const unreviewed = reqs.filter(r=>r.status==="active" && (r.bid_count||0)>0).length;
+  const liveSuggestions = procurementSuggestions(procurementQuery);
+  const selectedIndustry = PROCUREMENT_INDUSTRIES.find(i => i.label === activeIndustry);
+  const startProcurementSearch = (query = procurementQuery, industry = selectedIndustry) => {
+    const clean = query.trim();
+    if (clean) sessionStorage.setItem("buyerProcurementQuery", clean);
+    if (industry?.category) sessionStorage.setItem("buyerProcurementCategory", industry.category);
+    nav("/dashboard/vendors");
+  };
 
   if (loading) return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -103,6 +135,53 @@ function BuyerHome({ toast, nav }) {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:24, animation:"fadeUp .4s ease" }}>
+      <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"26px 30px", boxShadow:"0 4px 18px rgba(11,29,51,.07)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", gap:16, alignItems:"flex-start", marginBottom:18, flexWrap:"wrap" }}>
+          <div>
+            <div style={{ fontSize:12, color:"var(--muted,#67788D)", marginBottom:6 }}>Hi {userName().split(" ")[0]}, start with what you need.</div>
+            <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, color:"var(--navy,#0B1D33)", lineHeight:1.2 }}>What do you want to procure today?</h1>
+          </div>
+          <div style={{ display:"flex", gap:18, flexWrap:"wrap" }}>
+            {[{val:active.length,label:"Active RFPs"},{val:totalBids,label:"Bids"},{val:vendors.length,label:"Vendors"}].map(s=>(
+              <div key={s.label} style={{ minWidth:74 }}>
+                <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--navy,#0B1D33)", lineHeight:1 }}>{s.val}</div>
+                <div style={{ fontSize:10, color:"var(--muted,#67788D)", textTransform:"uppercase", letterSpacing:".07em", marginTop:4 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:10, alignItems:"center", background:"var(--cream,#F2EBD9)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:8, padding:"8px 10px", marginBottom:14, flexWrap:"wrap" }}>
+          <input value={procurementQuery} onChange={e=>setProcurementQuery(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") startProcurementSearch(); }}
+            placeholder="e.g. corporate lunch catering for 200 people in Delhi"
+            style={{ flex:1, border:"none", outline:"none", background:"transparent", color:"var(--navy,#0B1D33)", fontSize:15, fontFamily:"'DM Sans',sans-serif", minWidth:260, padding:"6px 4px" }}/>
+          <button onClick={()=>startProcurementSearch()} style={{ background:"var(--teal,#18664A)", color:"white", border:"none", borderRadius:6, padding:"10px 18px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Find vendors</button>
+        </div>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          {PROCUREMENT_INDUSTRIES.map(ind=>{
+            const activeChip = activeIndustry === ind.label;
+            return (
+              <button key={ind.label} onClick={()=>{ setActiveIndustry(ind.label); setProcurementQuery(q => q || ind.label); }}
+                style={{ background:activeChip?"var(--navy,#0B1D33)":"var(--cream,#F2EBD9)", color:activeChip?"var(--cream,#F2EBD9)":"var(--navy,#0B1D33)", border:"1px solid var(--border,#D4C9B5)", borderRadius:99, padding:"7px 13px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                {ind.label}
+              </button>
+            );
+          })}
+        </div>
+        {liveSuggestions.length > 0 && (
+          <div style={{ border:"1px solid var(--border,#D4C9B5)", borderRadius:10, overflow:"hidden", marginTop:14 }}>
+            {liveSuggestions.map((s,i)=>(
+              <button key={s.label} onClick={()=>startProcurementSearch(procurementQuery, s)}
+                style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, padding:"12px 14px", background:i%2===0?"white":"var(--cream,#F2EBD9)", border:"none", borderBottom:i<liveSuggestions.length-1?"1px solid var(--border,#D4C9B5)":"none", cursor:"pointer", textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}>
+                <span>
+                  <span style={{ display:"block", fontSize:13, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{s.label}</span>
+                  <span style={{ display:"block", fontSize:12, color:"var(--muted,#67788D)", marginTop:2 }}>Suggested category: {s.category}</span>
+                </span>
+                <span style={{ fontSize:12, fontWeight:700, color:"var(--teal,#18664A)" }}>View vendors</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── Hero ── */}
       <div style={{ background:"var(--navy,#0B1D33)", borderRadius:16, padding:"32px 36px", position:"relative", overflow:"hidden" }}>
@@ -853,8 +932,8 @@ function ActionBtn({ label, onClick, color, ghost }) {
 function BuyerVendors({ toast }) {
   const [vendors, setVendors]     = useState([]);
   const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState("");
-  const [category, setCategory]   = useState("");
+  const [search, setSearch]       = useState(() => sessionStorage.getItem("buyerProcurementQuery") || "");
+  const [category, setCategory]   = useState(() => sessionStorage.getItem("buyerProcurementCategory") || "");
   const [minEsg, setMinEsg]       = useState("");
   const [cert, setCert]           = useState("");
   const [selected, setSelected]   = useState(null);
@@ -881,7 +960,16 @@ function BuyerVendors({ toast }) {
     finally { setLoading(false); }
   };
 
-  useEffect(()=>{ load(); },[]);
+  useEffect(()=>{
+    const hadHomeSearch = sessionStorage.getItem("buyerProcurementQuery") || sessionStorage.getItem("buyerProcurementCategory");
+    if (hadHomeSearch) {
+      search_vendors();
+      sessionStorage.removeItem("buyerProcurementQuery");
+      sessionStorage.removeItem("buyerProcurementCategory");
+    } else {
+      load();
+    }
+  },[]);
 
   const openDetail = async (v) => {
     setSelected(v); setDetail(null); setDetailLoading(true); setShowDetailContact(false);

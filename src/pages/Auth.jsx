@@ -164,6 +164,8 @@ export function Login() {
   const [step, setStep]       = useState(0);
   const [role, setRole]       = useState(null);
   const [selIdx, setSelIdx]   = useState(null);
+  const [multiSel, setMultiSel] = useState([]);
+  const [quizAnswers, setQuizAnswers] = useState({});
   const [cardKey, setCardKey] = useState(0);
   // signup
   const [form, setForm]       = useState({ name:"", email:"", password:"" });
@@ -189,23 +191,49 @@ export function Login() {
   /* pick an option — auto-advance after 550ms */
   const pick = (idx, val) => {
     if (selIdx !== null) return;
+    if (step === 1) {
+      setMultiSel(prev => {
+        if (prev.includes(idx)) return prev.filter(i => i !== idx);
+        if (prev.length >= 3) {
+          toast.info("You can choose up to 3 options.");
+          return prev;
+        }
+        return [...prev, idx];
+      });
+      return;
+    }
     setSelIdx(idx);
     setTimeout(() => {
       if (step === 0) {
         setRole(val);
         setStep(1);
       } else if (step < 2) {
+        setQuizAnswers(p => ({ ...p, [`${role}_step_${step + 1}`]: [val] }));
         setStep(s => s + 1);
       } else {
+        setQuizAnswers(p => ({ ...p, [`${role}_step_${step + 1}`]: [val] }));
         setPhase('signup');
       }
       setSelIdx(null);
+      setMultiSel([]);
       setCardKey(k => k + 1);
     }, 550);
   };
 
+  const continueMultiStep = () => {
+    if (multiSel.length < 1) {
+      toast.warning("Choose at least one option to continue.");
+      return;
+    }
+    setQuizAnswers(p => ({ ...p, [`${role}_step_2`]: multiSel.map(i => q.opts[i]?.label).filter(Boolean) }));
+    setStep(2);
+    setMultiSel([]);
+    setSelIdx(null);
+    setCardKey(k => k + 1);
+  };
+
   const goToLogin = () => setPhase('login');
-  const goToQuiz  = () => { setPhase('quiz'); setStep(0); setRole(null); setCardKey(k => k + 1); };
+  const goToQuiz  = () => { setPhase('quiz'); setStep(0); setRole(null); setSelIdx(null); setMultiSel([]); setQuizAnswers({}); setCardKey(k => k + 1); };
 
   /* signup submit */
   const handleSignup = async e => {
@@ -398,24 +426,24 @@ export function Login() {
                   {q.opts.map((opt, i) => (
                     <div key={i} onClick={() => pick(i, opt.value || opt.label)}
                       style={{ display:"flex", alignItems:"flex-start", gap:14, padding:"13px 16px", borderRadius:8,
-                        border:`1.5px solid ${selIdx===i ? "var(--teal,#18664A)" : "var(--border,#D4C9B5)"}`,
-                        background: selIdx===i ? "var(--teal-bg,#E4F2EB)" : "white",
-                        cursor: selIdx!==null ? "default" : "pointer", transition:"all .16s",
+                        border:`1.5px solid ${(step===1 ? multiSel.includes(i) : selIdx===i) ? "var(--teal,#18664A)" : "var(--border,#D4C9B5)"}`,
+                        background: (step===1 ? multiSel.includes(i) : selIdx===i) ? "var(--teal-bg,#E4F2EB)" : "white",
+                        cursor: selIdx!==null && step!==1 ? "default" : "pointer", transition:"all .16s",
                       }}
-                      onMouseEnter={e=>{ if(selIdx===null){ e.currentTarget.style.borderColor="var(--teal,#18664A)"; e.currentTarget.style.background="var(--teal-bg,#E4F2EB)"; } }}
-                      onMouseLeave={e=>{ if(selIdx!==i){ e.currentTarget.style.borderColor="var(--border,#D4C9B5)"; e.currentTarget.style.background="white"; } }}>
+                      onMouseEnter={e=>{ if(selIdx===null || step===1){ e.currentTarget.style.borderColor="var(--teal,#18664A)"; e.currentTarget.style.background="var(--teal-bg,#E4F2EB)"; } }}
+                      onMouseLeave={e=>{ if(!(step===1 ? multiSel.includes(i) : selIdx===i)){ e.currentTarget.style.borderColor="var(--border,#D4C9B5)"; e.currentTarget.style.background="white"; } }}>
                       {/* Letter / tick circle */}
                       <div style={{ width:26, height:26, borderRadius:"50%", flexShrink:0, marginTop:1,
-                        background: selIdx===i ? "var(--teal,#18664A)" : "var(--cream-mid,#E9DFC6)",
-                        border:`1.5px solid ${selIdx===i ? "var(--teal,#18664A)" : "var(--border,#D4C9B5)"}`,
+                        background: (step===1 ? multiSel.includes(i) : selIdx===i) ? "var(--teal,#18664A)" : "var(--cream-mid,#E9DFC6)",
+                        border:`1.5px solid ${(step===1 ? multiSel.includes(i) : selIdx===i) ? "var(--teal,#18664A)" : "var(--border,#D4C9B5)"}`,
                         display:"flex", alignItems:"center", justifyContent:"center", transition:"all .16s" }}>
-                        {selIdx === i
+                        {(step===1 ? multiSel.includes(i) : selIdx===i)
                           ? <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M2 5.5l2.5 2.5 4.5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                           : <span style={{ fontSize:11, fontWeight:700, color:"var(--muted,#67788D)" }}>{['A','B','C','D'][i]}</span>
                         }
                       </div>
                       <div style={{ flex:1, paddingTop:2 }}>
-                        <div style={{ fontSize:14, lineHeight:1.5, fontWeight: selIdx===i ? 600 : 400, color: selIdx===i ? "var(--navy,#0B1D33)" : "var(--body,#253446)" }}>
+                        <div style={{ fontSize:14, lineHeight:1.5, fontWeight: (step===1 ? multiSel.includes(i) : selIdx===i) ? 600 : 400, color: (step===1 ? multiSel.includes(i) : selIdx===i) ? "var(--navy,#0B1D33)" : "var(--body,#253446)" }}>
                           {opt.label}
                         </div>
                         {opt.desc && (
@@ -424,6 +452,15 @@ export function Login() {
                       </div>
                     </div>
                   ))}
+                  {step === 1 && (
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginTop:12, paddingTop:14, borderTop:"1px solid var(--border,#D4C9B5)" }}>
+                      <div style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{multiSel.length}/3 selected</div>
+                      <button type="button" onClick={continueMultiStep}
+                        style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"10px 20px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                        Continue
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -467,7 +504,8 @@ export function Login() {
               </div>
               <form onSubmit={handleSignup}>
                 <FormInput label="Full name" placeholder="Your name" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} error={errors.name} autoComplete="name"/>
-                <FormInput label="Work email" type="email" placeholder="you@company.com" value={form.email} onChange={e=>setForm(p=>({...p,email:e.target.value}))} error={errors.email} autoComplete="email"/>
+                <FormInput label="Email address" type="email" placeholder="you@gmail.com or you@company.com" value={form.email} onChange={e=>setForm(p=>({...p,email:e.target.value}))} error={errors.email} autoComplete="email"/>
+                <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:-10, marginBottom:14 }}>Gmail is okay. We will send a verification link to this email.</div>
                 <FormInput label="Password" type="password" placeholder="Minimum 8 characters" value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} error={errors.password} autoComplete="new-password"/>
                 <SubmitBtn loading={loading}>Create my account →</SubmitBtn>
               </form>
@@ -521,7 +559,7 @@ export function Login() {
           <div style={{ animation:"fadeUp .35s cubic-bezier(.4,0,.2,1)" }}>
             <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:14, padding:"36px 40px", boxShadow:"0 6px 28px rgba(11,29,51,.10)" }}>
               <form onSubmit={handleLogin}>
-                <FormInput label="Work email" type="email" placeholder="you@company.com" value={lf.email} onChange={e=>setLf(p=>({...p,email:e.target.value}))} error={le.email} autoComplete="email"/>
+                <FormInput label="Email address" type="email" placeholder="you@gmail.com or you@company.com" value={lf.email} onChange={e=>setLf(p=>({...p,email:e.target.value}))} error={le.email} autoComplete="email"/>
                 <FormInput label="Password" type="password" placeholder="Your password" value={lf.password} onChange={e=>setLf(p=>({...p,password:e.target.value}))} error={le.password} autoComplete="current-password"/>
                 <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:8, marginTop:-8 }}>
                   <Link to="/forgot-password" style={{ fontSize:12, color:"var(--teal,#18664A)", textDecoration:"none" }}>Forgot password?</Link>
