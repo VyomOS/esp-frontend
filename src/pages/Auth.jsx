@@ -717,6 +717,65 @@ export function ForgotPassword() {
 
 /* ──────────────────────────────────── VerifyEmail ── */
 
+export function ResetPassword() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const token = params.get("token") || "";
+  const [form, setForm] = useState({ password:"", confirm:"" });
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const validate = () => {
+    const e = {};
+    if (!token) e.token = "Reset link is missing or invalid.";
+    if (form.password.length < 8) e.password = "Password must be at least 8 characters.";
+    if (form.confirm !== form.password) e.confirm = "Passwords do not match.";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handle = async e => {
+    e.preventDefault();
+    if (!validate()) return;
+    setLoading(true);
+    try {
+      await authAPI.resetPassword({ token, new_password: form.password });
+      setDone(true);
+      toast.success("Password reset successful.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Reset link expired or invalid.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (done) return (
+    <AuthShell title="Password updated">
+      <div style={{ textAlign:"center" }}>
+        <div style={{ fontSize:36, marginBottom:16 }}>✓</div>
+        <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.7, marginBottom:24 }}>Your password has been changed. You can now sign in with the new password.</p>
+        <button onClick={()=>navigate("/")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Go to login</button>
+      </div>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell title="Create new password" subtitle="Enter a new password for your ESP account">
+      <form onSubmit={handle}>
+        {errors.token && <div style={{ background:"var(--red-bg,#FAEBE8)", color:"var(--red,#B84232)", border:"1px solid rgba(184,66,50,.18)", borderRadius:8, padding:"10px 12px", fontSize:13, marginBottom:16 }}>{errors.token}</div>}
+        <FormInput label="New password" type="password" placeholder="Minimum 8 characters" value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} error={errors.password} autoComplete="new-password"/>
+        <FormInput label="Confirm password" type="password" placeholder="Re-enter new password" value={form.confirm} onChange={e=>setForm(p=>({...p,confirm:e.target.value}))} error={errors.confirm} autoComplete="new-password"/>
+        <SubmitBtn loading={loading}>Update password</SubmitBtn>
+        <div style={{ textAlign:"center", marginTop:16, fontSize:13, color:"var(--muted,#67788D)" }}>
+          <Link to="/forgot-password" style={{ color:"var(--teal,#18664A)", fontWeight:600, textDecoration:"none" }}>Request a new link</Link>
+        </div>
+      </form>
+    </AuthShell>
+  );
+}
+
 export function VerifyEmail() {
   const [params]  = useSearchParams();
   const navigate  = useNavigate();

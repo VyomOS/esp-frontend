@@ -593,8 +593,7 @@ function VendorHome({ toast, nav }) {
       {suggs.length > 0 && (
         <div>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-            <span style={{ fontSize:14 }}>✨</span>
-            <span style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--navy,#0B1D33)" }}>AI suggests your next steps</span>
+            <span style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Recommended next steps</span>
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {suggs.map(s=>(
@@ -1463,7 +1462,7 @@ function BidSubmitModal({ rfp, profile, esgResult, onClose, toast }) {
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
             <label style={{ fontSize:11, fontWeight:700, color:"var(--text3,#67788D)", letterSpacing:".08em", textTransform:"uppercase" }}>Cover note *</label>
             <button onClick={draftWithAI} disabled={drafting} style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", color:"var(--teal,#18664A)", fontSize:11, fontWeight:700, padding:"5px 12px", borderRadius:99, cursor:drafting?"wait":"pointer", display:"flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }}>
-              {drafting ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Drafting…</> : <>✨ Draft with AI</>}
+              {drafting ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Drafting…</> : <>Draft proposal</>}
             </button>
           </div>
           <Textarea value={form.cover_note} rows={5} onChange={e=>setForm(p=>({...p,cover_note:e.target.value}))} placeholder="Describe why you are the right vendor — your experience, approach, and unique value…"/>
@@ -1739,7 +1738,7 @@ function TagPicker({ label, options, selected, onChange, display }) {
 function AIBtn({ loading, onClick }) {
   return (
     <button onClick={onClick} disabled={loading} style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", color:"var(--teal,#18664A)", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:99, cursor:loading?"wait":"pointer", display:"inline-flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }}>
-      {loading ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Generating…</> : <>✨ AI generate</>}
+      {loading ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Generating…</> : <>Generate draft</>}
     </button>
   );
 }

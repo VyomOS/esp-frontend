@@ -175,7 +175,7 @@ function VendorApprovalCard({ vendor, onVerify, onReject, toast }) {
           </button>
           <button onClick={aiDocCheck} disabled={aiLoading}
             style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", borderRadius:6, padding:"7px 14px", fontSize:12, fontWeight:600, color:"var(--teal,#18664A)", cursor:aiLoading?"wait":"pointer", fontFamily:"'DM Sans',sans-serif", display:"flex", alignItems:"center", gap:6 }}>
-            {aiLoading ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Checking…</> : "✨ AI doc check"}
+            {aiLoading ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Checking…</> : "Review documents"}
           </button>
           {/* Manual KYC overrides */}
           {vendor.gstin && (
@@ -200,7 +200,7 @@ function VendorApprovalCard({ vendor, onVerify, onReject, toast }) {
           <div style={{ marginTop:12, background:"var(--navy,#0B1D33)", borderRadius:10, padding:"12px 16px", display:"flex", gap:10, alignItems:"flex-start" }}>
             <span style={{ fontSize:14, flexShrink:0 }}>✨</span>
             <div>
-              <div style={{ fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--teal-2,#22895F)", marginBottom:4 }}>AI document review</div>
+              <div style={{ fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--teal-2,#22895F)", marginBottom:4 }}>Document review</div>
               <div style={{ fontSize:13, color:"rgba(242,235,217,.8)", lineHeight:1.6 }}>{aiCheck}</div>
             </div>
           </div>
@@ -415,7 +415,7 @@ function AdminOverview({ toast, nav }) {
           </h1>
           {insight
             ? <p style={{ fontSize:13, color:"rgba(242,235,217,.65)", lineHeight:1.7, maxWidth:460, marginBottom:0 }}>{insight}</p>
-            : <p style={{ fontSize:13, color:"rgba(242,235,217,.4)", lineHeight:1.7 }}>Loading AI platform summary…</p>
+            : <p style={{ fontSize:13, color:"rgba(242,235,217,.4)", lineHeight:1.7 }}>Loading platform summary…</p>
           }
         </div>
         {/* Pending badge */}
@@ -1100,7 +1100,7 @@ function AdminAnalytics({ toast }) {
       {aiUsage && (
         <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:14, padding:"22px 26px", boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)" }}>AI endpoint usage</div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Assistant usage</div>
             <div style={{ display:"flex", gap:16 }}>
               {aiUsage.ai_calls?.total_calls > 0 && <span style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{aiUsage.ai_calls.total_calls} total calls</span>}
               {aiUsage.ai_calls?.est_cost_usd > 0 && <span style={{ fontSize:12, fontWeight:700, color:"var(--amber,#B8720A)" }}>${aiUsage.ai_calls.est_cost_usd.toFixed(4)} est. cost</span>}

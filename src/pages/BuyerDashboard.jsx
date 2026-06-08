@@ -13,11 +13,18 @@ const SERVICE_CATEGORIES = [
   "Green & Sustainability","Handicrafts & Artisan","Healthcare & Wellness","Construction & Fitout",
 ];
 const PROCUREMENT_INDUSTRIES = [
-  { label:"Healthcare", category:"Healthcare & Wellness", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
-  { label:"Automotive", category:"Logistics & Delivery", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
-  { label:"ITES", category:"IT & Digital Services", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
-  { label:"Gifting", category:"Handicrafts & Artisan", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
-  { label:"Food", category:"Food & Catering", terms:["food","catering","snacks","meals","canteen","beverage","lunch","kitchen"] },
+  { label:"Healthcare", category:"Healthcare & Wellness", count:"Diagnostics, PPE, wellness", code:"HC", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
+  { label:"Automotive", category:"Logistics & Delivery", count:"Fleet, EV, drivers", code:"AU", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
+  { label:"ITES", category:"IT & Digital Services", count:"Tech, support, BPO", code:"IT", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
+  { label:"Gifting", category:"Handicrafts & Artisan", count:"Hampers, merchandise", code:"GF", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
+  { label:"Food", category:"Food & Catering", count:"Meals, pantry, catering", code:"FD", terms:["food","catering","snacks","meals","canteen","beverage","lunch","kitchen"] },
+];
+const QUICK_REQUIREMENTS = [
+  { title:"Office meals & catering", meta:"Food vendors, canteen, packed meals", category:"Food & Catering", query:"office meals catering", tag:"Most requested" },
+  { title:"Corporate gifting", meta:"Hampers, merchandise, artisan products", category:"Handicrafts & Artisan", query:"corporate gifting hampers", tag:"Festive" },
+  { title:"Last-mile delivery", meta:"Fleet, EV delivery, logistics partners", category:"Logistics & Delivery", query:"last mile delivery logistics", tag:"Fast quotes" },
+  { title:"Facility cleaning", meta:"Housekeeping, hygiene, facility support", category:"Facilities & Cleaning", query:"facility cleaning housekeeping", tag:"Verified" },
+  { title:"IT support services", meta:"Software, support, digital operations", category:"IT & Digital Services", query:"IT support services", tag:"Remote ready" },
 ];
 const CERT_TYPES = ["women_led","msme_udyam","sc_st_owned","shg","social_enterprise","cooperative","fair_trade","weps_signatory"];
 const BID_COLOR  = { submitted:"var(--teal,#18664A)", under_review:"var(--amber,#B8720A)", shortlisted:"#6384ff", awarded:"var(--teal,#18664A)", declined:"var(--red,#B84232)" };
@@ -50,6 +57,21 @@ function procurementSuggestions(query) {
     .filter(ind => ind.hits > 0)
     .sort((a,b)=>b.hits-a.hits)
     .slice(0,3);
+}
+function detectProcurementIndustry(query) {
+  return PROCUREMENT_INDUSTRIES
+    .map(ind => ({ ...ind, hits: ind.terms.filter(t => query.toLowerCase().includes(t)).length }))
+    .filter(ind => ind.hits > 0)
+    .sort((a,b)=>b.hits-a.hits)[0] || null;
+}
+function searchableVendorText(v) {
+  return [
+    v.name, v.organization_name, v.category, v.service_categories,
+    v.certification_types, v.location, v.description, v.esg_band,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+function queryTerms(query) {
+  return query.toLowerCase().split(/\s+/).map(t => t.replace(/[^a-z0-9&]/g, "")).filter(t => t.length >= 3);
 }
 
 /* ─────────────────────────────────── Main router ── */
@@ -122,8 +144,9 @@ function BuyerHome({ toast, nav }) {
   const selectedIndustry = PROCUREMENT_INDUSTRIES.find(i => i.label === activeIndustry);
   const startProcurementSearch = (query = procurementQuery, industry = selectedIndustry) => {
     const clean = query.trim();
+    const detected = industry || detectProcurementIndustry(clean);
     if (clean) sessionStorage.setItem("buyerProcurementQuery", clean);
-    if (industry?.category) sessionStorage.setItem("buyerProcurementCategory", industry.category);
+    if (detected?.category) sessionStorage.setItem("buyerProcurementCategory", detected.category);
     nav("/dashboard/vendors");
   };
 
@@ -134,49 +157,59 @@ function BuyerHome({ toast, nav }) {
   );
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:24, animation:"fadeUp .4s ease" }}>
-      <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"26px 30px", boxShadow:"0 4px 18px rgba(11,29,51,.07)" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", gap:16, alignItems:"flex-start", marginBottom:18, flexWrap:"wrap" }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:22, animation:"fadeUp .4s ease" }}>
+      <div style={{ background:"#fff", border:"1px solid #E2E7EE", borderRadius:8, overflow:"hidden", boxShadow:"0 1px 8px rgba(11,29,51,.06)" }}>
+        <div style={{ padding:"22px 24px 18px", borderBottom:"1px solid #E6EAF0", background:"#F8FAFC" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", gap:18, alignItems:"flex-start", marginBottom:18, flexWrap:"wrap" }}>
           <div>
-            <div style={{ fontSize:12, color:"var(--muted,#67788D)", marginBottom:6 }}>Hi {userName().split(" ")[0]}, start with what you need.</div>
-            <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, color:"var(--navy,#0B1D33)", lineHeight:1.2 }}>What do you want to procure today?</h1>
+            <div style={{ fontSize:12, color:"#64748B", marginBottom:5 }}>Hi {userName().split(" ")[0]}, find suppliers for your next purchase.</div>
+            <h1 style={{ fontFamily:"'DM Sans',sans-serif", fontSize:26, fontWeight:800, color:"#0F172A", lineHeight:1.18, letterSpacing:0 }}>What do you want to procure today?</h1>
           </div>
-          <div style={{ display:"flex", gap:18, flexWrap:"wrap" }}>
-            {[{val:active.length,label:"Active RFPs"},{val:totalBids,label:"Bids"},{val:vendors.length,label:"Vendors"}].map(s=>(
-              <div key={s.label} style={{ minWidth:74 }}>
-                <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--navy,#0B1D33)", lineHeight:1 }}>{s.val}</div>
-                <div style={{ fontSize:10, color:"var(--muted,#67788D)", textTransform:"uppercase", letterSpacing:".07em", marginTop:4 }}>{s.label}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,minmax(78px,1fr))", gap:8, minWidth:270 }}>
+            {[{val:active.length,label:"Open RFPs"},{val:totalBids,label:"Quotes"},{val:vendors.length,label:"Suppliers"}].map(s=>(
+              <div key={s.label} style={{ background:"#fff", border:"1px solid #E2E8F0", borderRadius:7, padding:"10px 12px" }}>
+                <div style={{ fontSize:20, fontWeight:800, color:"#0F172A", lineHeight:1 }}>{s.val}</div>
+                <div style={{ fontSize:10, color:"#64748B", textTransform:"uppercase", letterSpacing:".05em", marginTop:4 }}>{s.label}</div>
               </div>
             ))}
           </div>
         </div>
-        <div style={{ display:"flex", gap:10, alignItems:"center", background:"var(--cream,#F2EBD9)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:8, padding:"8px 10px", marginBottom:14, flexWrap:"wrap" }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center", background:"#fff", border:"1.5px solid #CBD5E1", borderRadius:7, padding:"8px", flexWrap:"wrap" }}>
           <input value={procurementQuery} onChange={e=>setProcurementQuery(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") startProcurementSearch(); }}
-            placeholder="e.g. corporate lunch catering for 200 people in Delhi"
-            style={{ flex:1, border:"none", outline:"none", background:"transparent", color:"var(--navy,#0B1D33)", fontSize:15, fontFamily:"'DM Sans',sans-serif", minWidth:260, padding:"6px 4px" }}/>
-          <button onClick={()=>startProcurementSearch()} style={{ background:"var(--teal,#18664A)", color:"white", border:"none", borderRadius:6, padding:"10px 18px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Find vendors</button>
+            placeholder="Search: catering, logistics, gifts, IT support..."
+            style={{ flex:1, border:"none", outline:"none", background:"transparent", color:"#0F172A", fontSize:15, fontFamily:"'DM Sans',sans-serif", minWidth:260, padding:"7px 8px" }}/>
+          <button onClick={()=>startProcurementSearch()} style={{ background:"#18664A", color:"white", border:"none", borderRadius:6, padding:"11px 18px", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Search suppliers</button>
         </div>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+        </div>
+        <div style={{ padding:"16px 18px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, gap:10 }}>
+          <div style={{ fontSize:13, fontWeight:800, color:"#0F172A" }}>Shop by category</div>
+          <button onClick={()=>nav("/dashboard/vendors")} style={{ background:"none", border:"none", color:"#18664A", fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>All suppliers</button>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))", gap:10 }}>
           {PROCUREMENT_INDUSTRIES.map(ind=>{
             const activeChip = activeIndustry === ind.label;
             return (
-              <button key={ind.label} onClick={()=>{ setActiveIndustry(ind.label); setProcurementQuery(q => q || ind.label); }}
-                style={{ background:activeChip?"var(--navy,#0B1D33)":"var(--cream,#F2EBD9)", color:activeChip?"var(--cream,#F2EBD9)":"var(--navy,#0B1D33)", border:"1px solid var(--border,#D4C9B5)", borderRadius:99, padding:"7px 13px", fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
-                {ind.label}
+              <button key={ind.label} onClick={()=>{ setActiveIndustry(ind.label); setProcurementQuery(q => q || ind.label); startProcurementSearch(ind.label, ind); }}
+                style={{ background:activeChip?"#ECFDF5":"#fff", border:`1.5px solid ${activeChip?"#18664A":"#E2E8F0"}`, borderRadius:7, padding:"13px 12px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", textAlign:"left" }}>
+                <div style={{ width:32, height:32, borderRadius:6, background:activeChip?"#18664A":"#F1F5F9", color:activeChip?"#fff":"#0F172A", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:900, marginBottom:10 }}>{ind.code}</div>
+                <div style={{ fontSize:13, fontWeight:800, color:"#0F172A" }}>{ind.label}</div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:3, lineHeight:1.35 }}>{ind.count}</div>
               </button>
             );
           })}
         </div>
+        </div>
         {liveSuggestions.length > 0 && (
-          <div style={{ border:"1px solid var(--border,#D4C9B5)", borderRadius:10, overflow:"hidden", marginTop:14 }}>
+          <div style={{ borderTop:"1px solid #E2E8F0", overflow:"hidden" }}>
             {liveSuggestions.map((s,i)=>(
               <button key={s.label} onClick={()=>startProcurementSearch(procurementQuery, s)}
-                style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, padding:"12px 14px", background:i%2===0?"white":"var(--cream,#F2EBD9)", border:"none", borderBottom:i<liveSuggestions.length-1?"1px solid var(--border,#D4C9B5)":"none", cursor:"pointer", textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}>
+                style={{ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, padding:"12px 18px", background:i%2===0?"white":"#F8FAFC", border:"none", borderBottom:i<liveSuggestions.length-1?"1px solid #E2E8F0":"none", cursor:"pointer", textAlign:"left", fontFamily:"'DM Sans',sans-serif" }}>
                 <span>
-                  <span style={{ display:"block", fontSize:13, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{s.label}</span>
-                  <span style={{ display:"block", fontSize:12, color:"var(--muted,#67788D)", marginTop:2 }}>Suggested category: {s.category}</span>
+                  <span style={{ display:"block", fontSize:13, fontWeight:800, color:"#0F172A" }}>{s.label}</span>
+                  <span style={{ display:"block", fontSize:12, color:"#64748B", marginTop:2 }}>Category match: {s.category}</span>
                 </span>
-                <span style={{ fontSize:12, fontWeight:700, color:"var(--teal,#18664A)" }}>View vendors</span>
+                <span style={{ fontSize:12, fontWeight:800, color:"#18664A" }}>View suppliers</span>
               </button>
             ))}
           </div>
@@ -184,7 +217,27 @@ function BuyerHome({ toast, nav }) {
       </div>
 
       {/* ── Hero ── */}
-      <div style={{ background:"var(--navy,#0B1D33)", borderRadius:16, padding:"32px 36px", position:"relative", overflow:"hidden" }}>
+      <div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:16, fontWeight:800, color:"#0F172A" }}>Popular requirements</div>
+            <div style={{ fontSize:12, color:"#64748B", marginTop:2 }}>Frequently sourced by buyers on ESP</div>
+          </div>
+          <button onClick={()=>nav("/dashboard/vendors")} style={{ background:"none", border:"none", color:"#18664A", fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>View all suppliers</button>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:10 }}>
+          {QUICK_REQUIREMENTS.map(item=>(
+            <button key={item.title} onClick={()=>startProcurementSearch(item.query, { category:item.category })}
+              style={{ textAlign:"left", background:"#fff", border:"1px solid #E2E8F0", borderRadius:7, padding:"14px 15px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", boxShadow:"0 1px 6px rgba(11,29,51,.04)", minHeight:112 }}>
+              <span style={{ display:"inline-flex", fontSize:10, fontWeight:900, color:"#B8720A", background:"#FFF7ED", border:"1px solid #FED7AA", borderRadius:99, padding:"3px 8px", marginBottom:10 }}>{item.tag}</span>
+              <div style={{ fontSize:14, fontWeight:800, color:"#0F172A", marginBottom:5 }}>{item.title}</div>
+              <div style={{ fontSize:12, color:"#64748B", lineHeight:1.45 }}>{item.meta}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display:"none", background:"var(--navy,#0B1D33)", borderRadius:16, padding:"32px 36px", position:"relative", overflow:"hidden" }}>
         <div style={{ position:"absolute", right:-60, top:-60, width:240, height:240, borderRadius:"50%", border:"1px solid rgba(255,255,255,.05)", pointerEvents:"none" }}/>
         <div style={{ position:"relative", zIndex:1 }}>
           <div style={{ fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--teal-2,#22895F)", marginBottom:10 }}>Buyer dashboard</div>
@@ -213,7 +266,7 @@ function BuyerHome({ toast, nav }) {
       </div>
 
       {/* ── AI suggestions ── */}
-      {aiSuggs.length > 0 && (
+      {false && aiSuggs.length > 0 && (
         <div>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
             <span style={{ fontSize:14 }}>✨</span>
@@ -432,7 +485,7 @@ function RequestCard({ req, onViewBids, onAiMatch, onClose, onReopen, onDelete }
               </button>
               <button onClick={()=>onAiMatch(req.id)}
                 style={{ background:"var(--teal-bg,#E4F2EB)", color:"var(--teal,#18664A)", border:"none", borderRadius:6, padding:"7px 14px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
-                ✨ AI match vendors
+                Find matching suppliers
               </button>
               <button onClick={()=>onClose(req.id)}
                 style={{ background:"none", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, padding:"7px 12px", fontSize:12, fontWeight:600, color:"var(--muted,#67788D)", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
@@ -602,6 +655,11 @@ function BuyerRequests({ toast }) {
 
   return (
     <div style={{ animation:"fadeUp .4s ease" }}>
+      <div style={{ marginBottom:18, background:"#fff", border:"1px solid #E2E8F0", borderRadius:8, padding:"18px 20px" }}>
+        <div style={{ fontSize:11, fontWeight:800, color:"#64748B", letterSpacing:".08em", textTransform:"uppercase", marginBottom:6 }}>Procurement requests</div>
+        <h2 style={{ fontFamily:"'DM Sans',sans-serif", fontSize:22, fontWeight:800, color:"#0F172A", marginBottom:6, letterSpacing:0 }}>Manage your RFPs and quotes</h2>
+        <p style={{ fontSize:13, color:"#64748B", lineHeight:1.55 }}>Create buying requirements, compare supplier quotes, and close awarded contracts from one place.</p>
+      </div>
       {/* Header + create */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
         <div>
@@ -717,12 +775,12 @@ function BuyerRequests({ toast }) {
           ? <Empty icon="📨" title="No bids yet" desc="No vendors have submitted proposals for this RFP yet"/>
           : (
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-              {/* AI bid summary */}
+              {/* Bid comparison */}
               {aiSummary && (
                 <div style={{ background:"var(--navy,#0B1D33)", borderRadius:10, padding:"14px 18px", display:"flex", gap:12, alignItems:"flex-start" }}>
                   <span style={{ fontSize:16, flexShrink:0 }}>✨</span>
                   <div>
-                    <div style={{ fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--teal-2,#22895F)", marginBottom:5 }}>AI bid summary</div>
+                    <div style={{ fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--teal-2,#22895F)", marginBottom:5 }}>Bid comparison</div>
                     <div style={{ fontSize:13, color:"rgba(242,235,217,.8)", lineHeight:1.6 }}>{aiSummary}</div>
                   </div>
                 </div>
@@ -735,8 +793,8 @@ function BuyerRequests({ toast }) {
         }
       </Modal>
 
-      {/* ── AI match modal ── */}
-      <Modal open={!!aiModal} onClose={()=>{setAiModal(null);setAiResults(null);}} title="✨ AI vendor matching" width={580}>
+      {/* ── Match modal ── */}
+      <Modal open={!!aiModal} onClose={()=>{setAiModal(null);setAiResults(null);}} title="Supplier matching" width={580}>
         {aiLoading
           ? <div style={{ textAlign:"center", padding:"40px" }}>
               <span className="spinner" style={{width:32,height:32,borderTopColor:"var(--teal,#18664A)",borderColor:"rgba(24,102,74,.2)"}}/><br/>
@@ -763,9 +821,9 @@ function BuyerRequests({ toast }) {
                       </div>
                       <span style={{ background:i===0?"var(--teal,#18664A)":"var(--cream,#F2EBD9)", color:i===0?"white":"var(--navy,#0B1D33)", fontSize:13, fontWeight:700, padding:"5px 12px", borderRadius:99, flexShrink:0 }}>{m.score}% match</span>
                     </div>
-                    {/* AI reason */}
+                    {/* Match reason */}
                     <div style={{ fontSize:13, color:"var(--muted,#67788D)", lineHeight:1.55, marginBottom:12, paddingBottom:12, borderBottom:"1px solid var(--border,#D4C9B5)" }}>
-                      ✨ {m.reason}
+                      {m.reason}
                     </div>
                     {/* Actions */}
                     <div style={{ display:"flex", gap:8 }}>
@@ -930,6 +988,7 @@ function ActionBtn({ label, onClick, color, ghost }) {
 
 /* ─────────────────────────────────── VENDORS tab ── */
 function BuyerVendors({ toast }) {
+  const nav = useNavigate();
   const [vendors, setVendors]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState(() => sessionStorage.getItem("buyerProcurementQuery") || "");
@@ -951,10 +1010,25 @@ function BuyerVendors({ toast }) {
     finally { setLoading(false); }
   };
 
+  const resetSearch = async () => {
+    setSearch("");
+    setCategory("");
+    setCert("");
+    setMinEsg("");
+    sessionStorage.removeItem("buyerProcurementQuery");
+    sessionStorage.removeItem("buyerProcurementCategory");
+    await load();
+  };
+
   const search_vendors = async () => {
     setLoading(true);
     try {
-      const r = await vendorAPI.listVendors({ search, category, min_esg: Number(minEsg)||0, certification: cert });
+      const r = await vendorAPI.listVendors({
+        search: category ? "" : search,
+        category,
+        min_esg: Number(minEsg)||0,
+        certification: cert
+      });
       setVendors(r.data);
     } catch { toast.error("Search failed"); }
     finally { setLoading(false); }
@@ -982,18 +1056,26 @@ function BuyerVendors({ toast }) {
   };
 
   const filtered = vendors.filter(v=>{
-    const name = (v.name||v.organization_name||"").toLowerCase();
-    const s = search.toLowerCase();
-    return !s || name.includes(s) || (v.location||"").toLowerCase().includes(s);
+    const text = searchableVendorText(v);
+    const terms = queryTerms(search);
+    const categoryOk = !category || text.includes(category.toLowerCase().split(" ")[0]);
+    if (!terms.length) return categoryOk;
+    const termOk = terms.some(t => text.includes(t));
+    return categoryOk && (termOk || Boolean(category));
   });
 
   return (
     <div style={{ animation:"fadeUp .4s ease" }}>
+      <div style={{ background:"#fff", border:"1px solid #E2E8F0", borderRadius:8, padding:"18px 20px", marginBottom:14 }}>
+        <div style={{ fontSize:11, fontWeight:800, color:"#64748B", letterSpacing:".08em", textTransform:"uppercase", marginBottom:6 }}>Supplier marketplace</div>
+        <h2 style={{ fontFamily:"'DM Sans',sans-serif", fontSize:22, fontWeight:800, color:"#0F172A", marginBottom:6, letterSpacing:0 }}>Browse verified suppliers</h2>
+        <p style={{ fontSize:13, color:"#64748B", lineHeight:1.55 }}>Compare suppliers by category, certification, location and ESG readiness before opening the profile.</p>
+      </div>
       {/* Search bar */}
-      <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
+      <div style={{ background:"white", border:"1px solid #E2E8F0", borderRadius:8, padding:16, marginBottom:14, boxShadow:"0 1px 8px rgba(11,29,51,.05)", display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-end" }}>
         <div style={{ flex:1, minWidth:180 }}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Search vendors by name or location…"
-            style={{ width:"100%", padding:"11px 16px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"white", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:8, outline:"none" }}/>
+            style={{ width:"100%", padding:"11px 16px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"white", color:"#0F172A", border:"1.5px solid #CBD5E1", borderRadius:7, outline:"none" }}/>
         </div>
         <Select value={category} onChange={e=>setCategory(e.target.value)} style={{ minWidth:180 }}
           options={[{value:"",label:"All categories"},...SERVICE_CATEGORIES.map(c=>({value:c,label:c}))]}/>
@@ -1003,29 +1085,53 @@ function BuyerVendors({ toast }) {
           <input type="number" min="0" max="100" value={minEsg} onChange={e=>setMinEsg(e.target.value)} placeholder="Min ESG score"
             style={{ width:"100%", padding:"10px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"white", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:8, outline:"none" }}/>
         </div>
-        <button onClick={search_vendors} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 20px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Search</button>
-        <button onClick={load} style={{ background:"none", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, padding:"11px 16px", fontSize:13, fontWeight:600, color:"var(--muted,#67788D)", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Reset</button>
+        <button onClick={search_vendors} style={{ background:"#18664A", color:"white", border:"none", borderRadius:6, padding:"11px 20px", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Search</button>
+        <button onClick={resetSearch} style={{ background:"#fff", border:"1px solid #CBD5E1", borderRadius:6, padding:"11px 16px", fontSize:13, fontWeight:700, color:"#475569", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Reset</button>
       </div>
+      {!loading && (
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, gap:12, flexWrap:"wrap" }}>
+          <div style={{ fontSize:13, color:"var(--muted,#67788D)" }}>{filtered.length} supplier{filtered.length!==1?"s":""} found</div>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {category && <span style={{ fontSize:11, fontWeight:700, color:"var(--teal,#18664A)", background:"var(--teal-bg,#E4F2EB)", padding:"4px 9px", borderRadius:99 }}>{category}</span>}
+            {cert && <span style={{ fontSize:11, fontWeight:700, color:"var(--navy,#0B1D33)", background:"var(--cream,#F2EBD9)", padding:"4px 9px", borderRadius:99 }}>{cert.replace(/_/g," ")}</span>}
+            {minEsg && <span style={{ fontSize:11, fontWeight:700, color:"var(--amber,#B8720A)", background:"var(--amber-bg,#FDF3E4)", padding:"4px 9px", borderRadius:99 }}>ESG {minEsg}+</span>}
+          </div>
+        </div>
+      )}
 
       {loading
         ? <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:14 }}>{[...Array(6)].map((_,i)=><div key={i} className="skeleton" style={{height:160,borderRadius:12}}/>)}</div>
         : filtered.length === 0
-        ? <Empty icon="🌱" title="No vendors found" desc="Try different search terms or remove filters"/>
+        ? (
+          <Empty
+            icon="SUP"
+            title="No exact supplier match yet"
+            desc={search || category ? "Clear filters to browse all suppliers, or create an RFP so vendors can quote against this requirement." : "Try another category or create a new procurement request."}
+            action={
+              <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap" }}>
+                <button onClick={resetSearch} style={{ background:"#18664A", color:"white", border:"none", borderRadius:6, padding:"10px 16px", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Show all suppliers</button>
+                <button onClick={()=>nav("/dashboard/requests")} style={{ background:"#fff", color:"#0F172A", border:"1px solid #CBD5E1", borderRadius:6, padding:"10px 16px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Create RFP</button>
+              </div>
+            }
+          />
+        )
         : (
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:14 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:12 }}>
             {filtered.map((v,i)=>{
               const id  = v.vendor_id||v.id;
               const esg = v.esg_score||0;
               const esgColor = esg>=80?"var(--teal,#18664A)":esg>=60?"var(--amber,#B8720A)":"var(--red,#B84232)";
               return (
                 <div key={id} onClick={()=>openDetail(v)}
-                  style={{ background:"white", border:`1px solid ${i===0?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, borderRadius:14, padding:"20px 20px 16px", cursor:"pointer", boxShadow:"0 2px 10px rgba(11,29,51,.05)", transition:"all .18s" }}
-                  onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 6px 24px rgba(11,29,51,.12)"; e.currentTarget.style.transform="translateY(-2px)"; }}
-                  onMouseLeave={e=>{ e.currentTarget.style.boxShadow="0 2px 10px rgba(11,29,51,.05)"; e.currentTarget.style.transform=""; }}>
-                  {i===0 && <div style={{ fontSize:9, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"var(--teal,#18664A)", marginBottom:8 }}>🏆 Top ranked</div>}
+                  style={{ background:"white", border:"1px solid #E2E8F0", borderRadius:8, padding:"16px 18px", cursor:"pointer", boxShadow:"0 1px 6px rgba(11,29,51,.04)", transition:"all .18s", minHeight:210 }}
+                  onMouseEnter={e=>{ e.currentTarget.style.boxShadow="0 6px 18px rgba(11,29,51,.10)"; e.currentTarget.style.borderColor="#CBD5E1"; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.boxShadow="0 1px 6px rgba(11,29,51,.04)"; e.currentTarget.style.borderColor="#E2E8F0"; }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                    <span style={{ fontSize:10, fontWeight:900, letterSpacing:".08em", textTransform:"uppercase", color:i===0?"#18664A":"#64748B", background:i===0?"#ECFDF5":"#F8FAFC", border:"1px solid #E2E8F0", padding:"3px 8px", borderRadius:99 }}>{i===0 ? "Preferred supplier" : "Verified profile"}</span>
+                    {v.is_women_owned && <span style={{ fontSize:10, fontWeight:800, color:"#BE185D", background:"#FDF2F8", border:"1px solid #FBCFE8", padding:"3px 8px", borderRadius:99, flexShrink:0 }}>Women-led</span>}
+                  </div>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
-                    <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)", lineHeight:1.3, flex:1, marginRight:8 }}>{v.name||v.organization_name}</div>
-                    {v.is_women_owned && <span style={{ fontSize:9, fontWeight:700, letterSpacing:".07em", textTransform:"uppercase", color:"#db2777", background:"rgba(244,114,182,.1)", padding:"3px 8px", borderRadius:99, flexShrink:0 }}>Women-led</span>}
+                    <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:16, fontWeight:800, color:"#0F172A", lineHeight:1.3, flex:1, marginRight:8 }}>{v.name||v.organization_name}</div>
                   </div>
                   {v.location && <div style={{ fontSize:12, color:"var(--muted,#67788D)", marginBottom:8 }}>📍 {v.location}</div>}
                   {v.description && <div style={{ fontSize:12, color:"var(--muted,#67788D)", lineHeight:1.5, marginBottom:10 }}>{v.description?.slice(0,70)}…</div>}
@@ -1034,6 +1140,10 @@ function BuyerVendors({ toast }) {
                   <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
                     <span style={{ fontSize:11, fontWeight:700, color:esgColor, background:`${esgColor}12`, padding:"3px 8px", borderRadius:99 }}>ESG {esg}/100</span>
                     {v.esg_band && <span style={{ fontSize:11, color:"var(--muted,#67788D)" }}>{v.esg_band}</span>}
+                  </div>
+                  <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid var(--border,#D4C9B5)", display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
+                    <span style={{ fontSize:11, color:"var(--muted,#67788D)" }}>Profile, ESG and contact details</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:"var(--teal,#18664A)" }}>View supplier</span>
                   </div>
                 </div>
               );
@@ -1297,7 +1407,7 @@ function EsgTable({ rows }) {
 function AIBtn({ loading, onClick }) {
   return (
     <button onClick={onClick} disabled={loading} style={{ background:"var(--teal-bg,#E4F2EB)", border:"none", color:"var(--teal,#18664A)", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:99, cursor:loading?"wait":"pointer", display:"inline-flex", alignItems:"center", gap:5, fontFamily:"'DM Sans',sans-serif" }}>
-      {loading ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Generating…</> : <>✨ AI generate</>}
+      {loading ? <><span className="spinner" style={{width:10,height:10,borderTopColor:"var(--teal)"}}/> Drafting...</> : <>Draft for me</>}
     </button>
   );
 }

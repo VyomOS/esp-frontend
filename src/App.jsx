@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
-import { Login, Register, ForgotPassword, VerifyEmail } from "./pages/Auth";
+import { Login, Register, ForgotPassword, ResetPassword, VerifyEmail } from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Landing from "./pages/Landing";
 
@@ -21,6 +21,7 @@ export default function App() {
               <Route path="/home"                 element={<Landing />} />
               <Route path="/register"             element={<Register />} />
               <Route path="/forgot-password"      element={<ForgotPassword />} />
+              <Route path="/reset-password"       element={<ResetPassword />} />
               <Route path="/verify-email"         element={<VerifyEmail />} />
               <Route path="/dashboard"            element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/dashboard/:tab"       element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
