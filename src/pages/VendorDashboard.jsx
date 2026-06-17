@@ -1505,7 +1505,7 @@ function ESGBoolField({ label, checked, onChange }) {
 }
 
 /* ─────────────────────────────────── ESG tab ── */
-function VendorESG({ toast }) {
+function VendorESGOld({ toast }) {
   const [profile, setProfile]   = useState(null);
   const [existing, setExisting] = useState([]);
   const [step, setStep]         = useState(0); // 0=E, 1=S, 2=G, 3=review
@@ -1689,6 +1689,337 @@ function VendorESG({ toast }) {
 }
 
 /* ─────────────────────────────────── Shared sub-components ── */
+
+const ESG_SUPPORT_EMAIL = "contact@evencargo.in";
+const ESG_SUPPORT_PHONE = "+91 93101 56985";
+
+const ESG_EMPTY_FORM = {
+  year: String(new Date().getFullYear()),
+  carbon_emissions:"", renewable_energy_pct:"", ev_fleet_pct:"", waste_recycling_pct:"",
+  biodegradable_packaging_pct:"", water_consumption:"", carbon_offset_programme:false,
+  total_employees:"", women_employees_pct:"", women_leadership_pct:"", sc_st_obc_pct:"",
+  pwd_employees_pct:"", jobs_created:"", jobs_marginalised:"", living_wage_compliance:false,
+  health_insurance_pct:"", training_hours_per_emp:"", community_sourcing_pct:"",
+  women_ownership_pct:"", women_board_pct:"", grievance_mechanism:false,
+  avg_payment_days:"", annual_report_filed:false, data_privacy_policy:false,
+  women_employed:"", carbon_saved:"", local_sourcing_pct:"", msme_certified:false,
+};
+
+const ESG_QUESTIONS = [
+  { field:"renewable_energy_pct", pillar:"Environmental", weight:"up to 6 pts", type:"percent", title:"How much of your energy comes from renewable sources?", help:"Include solar, green grid power, renewable certificates, or other clean energy sources." },
+  { field:"ev_fleet_pct", pillar:"Environmental", weight:"up to 4 pts", type:"percent", title:"What share of your delivery or operating fleet is EV or non-motorised?", help:"If you do not operate a fleet, choose 0% or I don't know." },
+  { field:"waste_recycling_pct", pillar:"Environmental", weight:"up to 5 pts", type:"percent", title:"What percentage of operational waste is recycled or reused?", help:"Estimate from regular waste handling, vendor pickup, or internal records." },
+  { field:"biodegradable_packaging_pct", pillar:"Environmental", weight:"up to 4 pts", type:"percent", title:"What percentage of your packaging is biodegradable or reusable?", help:"Use this for compostable, recycled, reusable, or low-plastic packaging." },
+  { field:"carbon_offset_programme", pillar:"Environmental", weight:"3 pts", type:"bool", title:"Do you have a carbon offset or reduction programme?", help:"This can include tree plantation, verified offsets, or a documented emissions-reduction plan." },
+  { field:"carbon_emissions", pillar:"Environmental", weight:"low emissions bonus", type:"number", title:"What are your annual carbon emissions?", unit:"tCO2e/year", placeholder:"e.g. 12", help:"If you have not measured this yet, choose I don't know and we can help calculate it." },
+  { field:"water_consumption", pillar:"Environmental", weight:"tracked for impact", type:"number", title:"What is your annual water consumption?", unit:"litres/year", placeholder:"e.g. 50000", help:"A rough annual estimate is enough for now." },
+  { field:"carbon_saved", pillar:"Environmental", weight:"impact metric", type:"number", title:"How much carbon have you saved through your operations?", unit:"tCO2e", placeholder:"e.g. 5", help:"Count savings from EV usage, recycling, renewable energy, or process improvements." },
+  { field:"total_employees", pillar:"Social", weight:"context", type:"number", title:"How many people does your organisation currently employ?", unit:"employees", placeholder:"e.g. 25", help:"We prefill this from your profile team-size band when possible." },
+  { field:"women_employees_pct", pillar:"Social", weight:"up to 12 pts", type:"percent", title:"What percentage of employees are women?", help:"This is one of the strongest social-impact scoring fields." },
+  { field:"women_leadership_pct", pillar:"Social", weight:"up to 8 pts", type:"percent", title:"What percentage of leadership roles are held by women?", help:"Include founders, directors, managers, supervisors, or team leads." },
+  { field:"women_employed", pillar:"Social", weight:"impact metric", type:"number", title:"How many women are employed by your organisation?", unit:"women employees", placeholder:"e.g. 18", help:"If you already gave the percentage, add the count if you know it." },
+  { field:"sc_st_obc_pct", pillar:"Social", weight:"up to 3 pts", type:"percent", title:"What percentage of employees are from SC/ST/OBC communities?", help:"Use your HR or payroll records if available." },
+  { field:"pwd_employees_pct", pillar:"Social", weight:"tracked for inclusion", type:"percent", title:"What percentage of employees are persons with disabilities?", help:"This helps buyers identify inclusive suppliers." },
+  { field:"jobs_created", pillar:"Social", weight:"up to 5 pts", type:"number", title:"How many jobs did you create in the last 12 months?", unit:"jobs", placeholder:"e.g. 8", help:"Count net new jobs, including full-time, part-time, and stable contract roles." },
+  { field:"jobs_marginalised", pillar:"Social", weight:"impact metric", type:"number", title:"How many new jobs supported marginalised communities?", unit:"jobs", placeholder:"e.g. 5", help:"Include women, SC/ST/OBC, PwD, low-income, rural, SHG, or similar groups." },
+  { field:"living_wage_compliance", pillar:"Social", weight:"4 pts", type:"bool", title:"Do you pay at least living wage or statutory minimum wage?", help:"Choose Yes if your employees are paid fairly and legally across roles." },
+  { field:"health_insurance_pct", pillar:"Social", weight:"up to 4 pts", type:"percent", title:"What percentage of employees have health insurance coverage?", help:"Include ESIC, group insurance, or company-supported health coverage." },
+  { field:"training_hours_per_emp", pillar:"Social", weight:"up to 4 pts", type:"number", title:"How many training hours does each employee receive per year?", unit:"hours per employee/year", placeholder:"e.g. 12", help:"Include safety, skill, compliance, digital, or job-related training." },
+  { field:"community_sourcing_pct", pillar:"Social", weight:"up to 5 pts", type:"percent", title:"What percentage of sourcing is local or community-based?", help:"This can include local suppliers, SHGs, artisans, farmer groups, or nearby MSMEs." },
+  { field:"msme_certified", pillar:"Social", weight:"trust signal", type:"bool", title:"Are you MSME/Udyam certified?", help:"We prefill this if your profile certifications already include MSME/Udyam." },
+  { field:"women_ownership_pct", pillar:"Governance", weight:"up to 8 pts", type:"percent", title:"What percentage of the business is women-owned?", help:"We use your profile ownership data if you have already provided it." },
+  { field:"women_board_pct", pillar:"Governance", weight:"up to 5 pts", type:"percent", title:"What percentage of board or management roles are held by women?", help:"Include directors, partners, senior managers, and decision-makers." },
+  { field:"grievance_mechanism", pillar:"Governance", weight:"3 pts", type:"bool", title:"Do you have a formal grievance or complaint mechanism?", help:"This can be an HR process, escalation contact, policy, or documented channel." },
+  { field:"avg_payment_days", pillar:"Governance", weight:"payment-practice check", type:"number", title:"On average, how many days do you take to pay suppliers?", unit:"days", placeholder:"e.g. 30", help:"Faster supplier payments support better governance." },
+  { field:"annual_report_filed", pillar:"Governance", weight:"3 pts", type:"bool", title:"Have annual reports or audited accounts been filed?", help:"This can include MCA filings, audited statements, or annual compliance records." },
+  { field:"data_privacy_policy", pillar:"Governance", weight:"2 pts", type:"bool", title:"Do you have a data privacy or customer-data policy?", help:"Choose Yes if you have written rules for handling customer, employee, or buyer data." },
+  { field:"local_sourcing_pct", pillar:"Governance", weight:"impact metric", type:"percent", title:"What percentage of procurement is locally sourced?", help:"Use this for nearby vendors, local raw materials, or India-based suppliers." },
+];
+
+const ESG_NUMERIC_FIELDS = [
+  "year","carbon_emissions","renewable_energy_pct","ev_fleet_pct","waste_recycling_pct",
+  "biodegradable_packaging_pct","water_consumption","total_employees","women_employees_pct",
+  "women_leadership_pct","sc_st_obc_pct","pwd_employees_pct","jobs_created","jobs_marginalised",
+  "health_insurance_pct","training_hours_per_emp","community_sourcing_pct","women_ownership_pct",
+  "women_board_pct","avg_payment_days","women_employed","carbon_saved","local_sourcing_pct"
+];
+
+function profileESGDefaults(profile) {
+  const defaults = {};
+  const status = {};
+  const certs = parseJSON(profile?.certification_types, []);
+  if (certs.includes("msme_udyam")) {
+    defaults.msme_certified = true;
+    status.msme_certified = "answered";
+  }
+  if (profile?.is_women_owned) {
+    defaults.women_ownership_pct = String(profile.women_ownership_percent || 51);
+    status.women_ownership_pct = "answered";
+  } else if (profile?.women_ownership_percent) {
+    defaults.women_ownership_pct = String(profile.women_ownership_percent);
+    status.women_ownership_pct = "answered";
+  }
+  if (profile?.team_size_band) {
+    const teamMap = { "1-10":"5", "11-50":"25", "51-200":"100", "200+":"200" };
+    if (teamMap[profile.team_size_band]) {
+      defaults.total_employees = teamMap[profile.team_size_band];
+      status.total_employees = "answered";
+    }
+  }
+  return { defaults, status };
+}
+
+function ESGChoiceButton({ selected, children, onClick, tone = "var(--teal,#18664A)" }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{ border:`1.5px solid ${selected?tone:"var(--border,#D4C9B5)"}`, background:selected?`${tone}12`:"white", color:selected?tone:"var(--body,#253446)", borderRadius:8, padding:"13px 14px", fontSize:13, fontWeight:selected?800:650, fontFamily:"'DM Sans',sans-serif", cursor:"pointer", textAlign:"left", transition:"all .18s", minHeight:48 }}>
+      {children}
+    </button>
+  );
+}
+
+function VendorESG({ toast }) {
+  const [profile, setProfile] = useState(null);
+  const [existing, setExisting] = useState([]);
+  const [qIndex, setQIndex] = useState(0);
+  const [status, setStatus] = useState({});
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(ESG_EMPTY_FORM);
+
+  useEffect(()=>{
+    vendorAPI.getMyProfile().then(r=>{
+      setProfile(r.data);
+      vendorAPI.getESG(r.data.id).then(e=>setExisting(e.data)).catch(()=>{});
+      const key = `esp_esg_draft_${r.data.id}`;
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          const draft = JSON.parse(saved);
+          setForm({ ...ESG_EMPTY_FORM, ...(draft.form || {}) });
+          setStatus(draft.status || {});
+          setQIndex(Math.min(Math.max(Number(draft.qIndex) || 0, 0), ESG_QUESTIONS.length));
+          setDraftRestored(true);
+        } catch {
+          const prefills = profileESGDefaults(r.data);
+          setForm(p=>({ ...p, ...prefills.defaults }));
+          setStatus(prefills.status);
+        }
+      } else {
+        const prefills = profileESGDefaults(r.data);
+        setForm(p=>({ ...p, ...prefills.defaults }));
+        setStatus(prefills.status);
+      }
+      setHydrated(true);
+    }).catch(()=>{ setHydrated(true); });
+  },[]);
+
+  useEffect(()=>{
+    if (!hydrated || !profile?.id) return;
+    localStorage.setItem(`esp_esg_draft_${profile.id}`, JSON.stringify({
+      qIndex, form, status, updatedAt: new Date().toISOString()
+    }));
+  }, [hydrated, profile?.id, qIndex, form, status]);
+
+  const current = ESG_QUESTIONS[qIndex];
+  const isReview = qIndex >= ESG_QUESTIONS.length;
+  const answeredCount = ESG_QUESTIONS.filter(q=>status[q.field] === "answered").length;
+  const skippedCount = ESG_QUESTIONS.filter(q=>status[q.field] === "skipped").length;
+  const touchedCount = answeredCount + skippedCount;
+  const progressPct = Math.round((touchedCount / ESG_QUESTIONS.length) * 100);
+  const skippedFields = ESG_QUESTIONS.filter(q=>status[q.field] === "skipped");
+  const pillarColors = { Environmental:"#18664A", Social:"#6384ff", Governance:"#B8720A" };
+  const percentOptions = [
+    { label:"0%", value:"0" },
+    { label:"1-25%", value:"25" },
+    { label:"26-50%", value:"50" },
+    { label:"51-75%", value:"75" },
+    { label:"76-100%", value:"100" },
+  ];
+
+  const setAnswered = (field, val) => {
+    setForm(p=>({...p,[field]:val}));
+    setStatus(p=>({...p,[field]:"answered"}));
+  };
+  const skipCurrent = () => {
+    if (!current) return;
+    setForm(p=>({...p,[current.field]: current.type === "bool" ? false : ""}));
+    setStatus(p=>({...p,[current.field]:"skipped"}));
+    setQIndex(i=>Math.min(i+1, ESG_QUESTIONS.length));
+  };
+  const goNext = () => setQIndex(i=>Math.min(i+1, ESG_QUESTIONS.length));
+  const goPrev = () => setQIndex(i=>Math.max(i-1, 0));
+
+  const save = async()=>{
+    setSaving(true);
+    try {
+      const payload = { ...form };
+      ESG_NUMERIC_FIELDS.forEach(f=>{ payload[f] = Number(payload[f]) || 0; });
+      const res = await vendorAPI.addESG(payload);
+      toast.success(`ESG submitted! Score: ${res.data.score}/100 - ${res.data.band}`);
+      if (profile?.id) localStorage.removeItem(`esp_esg_draft_${profile.id}`);
+      const prefills = profileESGDefaults(profile);
+      setForm({ ...ESG_EMPTY_FORM, ...prefills.defaults });
+      setStatus(prefills.status);
+      setQIndex(0);
+      setDraftRestored(false);
+      if (profile) vendorAPI.getESG(profile.id).then(e=>setExisting(e.data)).catch(()=>{});
+    } catch(err) { toast.error(err.response?.data?.detail||"Failed"); }
+    finally { setSaving(false); }
+  };
+
+  const renderQuestionInput = () => {
+    if (!current) return null;
+    const tone = pillarColors[current.pillar] || "var(--teal,#18664A)";
+    if (current.type === "bool") {
+      return (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10 }}>
+          <ESGChoiceButton selected={status[current.field]==="answered" && form[current.field] === true} tone={tone} onClick={()=>setAnswered(current.field, true)}>Yes</ESGChoiceButton>
+          <ESGChoiceButton selected={status[current.field]==="answered" && form[current.field] === false} tone={tone} onClick={()=>setAnswered(current.field, false)}>No</ESGChoiceButton>
+          <ESGChoiceButton selected={status[current.field]==="skipped"} tone="#B8720A" onClick={skipCurrent}>I don't know</ESGChoiceButton>
+        </div>
+      );
+    }
+    if (current.type === "percent") {
+      return (
+        <>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))", gap:10 }}>
+            {percentOptions.map(o=>(
+              <ESGChoiceButton key={o.value} selected={status[current.field]==="answered" && String(form[current.field])===o.value} tone={tone} onClick={()=>setAnswered(current.field, o.value)}>
+                {o.label}
+              </ESGChoiceButton>
+            ))}
+          </div>
+          <div style={{ marginTop:14 }}>
+            <label style={{ fontSize:11, fontWeight:800, color:"var(--muted,#67788D)", letterSpacing:".08em", textTransform:"uppercase", display:"block", marginBottom:6 }}>Or enter exact percentage</label>
+            <input type="number" min="0" max="100" value={status[current.field]==="skipped" ? "" : form[current.field]}
+              onChange={e=>setAnswered(current.field, e.target.value)}
+              placeholder="0-100"
+              style={{ width:"100%", padding:"13px 14px", fontSize:15, fontFamily:"'DM Sans',sans-serif", background:"var(--bg,#F2EBD9)", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:8, outline:"none" }}/>
+          </div>
+        </>
+      );
+    }
+    return (
+      <input type="number" min="0" value={status[current.field]==="skipped" ? "" : form[current.field]}
+        onChange={e=>setAnswered(current.field, e.target.value)}
+        placeholder={current.placeholder || "Enter value"}
+        style={{ width:"100%", padding:"15px 16px", fontSize:16, fontFamily:"'DM Sans',sans-serif", background:"var(--bg,#F2EBD9)", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:8, outline:"none" }}/>
+    );
+  };
+
+  return (
+    <div style={{ animation:"fadeUp .4s ease" }}>
+      {existing.slice(0,1).map(e=>(
+        <div key={e.id} style={{ background:"var(--navy,#0B1D33)", borderRadius:12, padding:"20px 24px", marginBottom:20, display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:16 }}>
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", color:"rgba(242,235,217,.4)", marginBottom:4 }}>Latest ESG score {e.year&&`(${e.year})`}</div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:28, fontWeight:700, color:e.esg_score>=80?"#5FCFA0":e.esg_score>=60?"#F5B342":"#F5937F" }}>{e.esg_score}<span style={{ fontSize:14, fontFamily:"'DM Sans',sans-serif", color:"rgba(242,235,217,.4)", fontWeight:400 }}>/100</span></div>
+            <div style={{ fontSize:12, color:"rgba(242,235,217,.55)", marginTop:2 }}>{e.esg_band}</div>
+          </div>
+          <div style={{ display:"flex", gap:16 }}>
+            {[{l:"E",v:e.e_score,m:30,c:"#5FCFA0"},{l:"S",v:e.s_score,m:45,c:"#818cf8"},{l:"G",v:e.g_score,m:25,c:"#fbbf24"}].map(p=>(
+              <div key={p.l} style={{ textAlign:"center" }}>
+                <div style={{ fontSize:20, fontWeight:700, color:p.c, fontFamily:"'Playfair Display',serif" }}>{p.v}</div>
+                <div style={{ fontSize:10, color:"rgba(242,235,217,.4)" }}>{p.l}/{p.m}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"18px 20px", marginBottom:16, boxShadow:"0 2px 12px rgba(11,29,51,.05)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", gap:14, alignItems:"flex-start", flexWrap:"wrap", marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:11, fontWeight:800, letterSpacing:".09em", textTransform:"uppercase", color:"var(--teal,#18664A)" }}>Guided ESG assessment</div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--navy,#0B1D33)", marginTop:3 }}>
+              {profile?.organization_name || "Your organisation"} ESG snapshot
+            </div>
+            <div style={{ fontSize:13, color:"var(--muted,#67788D)", marginTop:4 }}>
+              One question at a time. Unknown answers are allowed and saved in this browser until you submit.
+            </div>
+          </div>
+          <div style={{ textAlign:"right", minWidth:160 }}>
+            <div style={{ fontSize:24, fontWeight:800, color:"var(--teal,#18664A)", lineHeight:1 }}>{progressPct}%</div>
+            <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:3 }}>{answeredCount} answered / {skippedCount} skipped</div>
+          </div>
+        </div>
+        <div style={{ height:8, background:"var(--bg,#F2EBD9)", borderRadius:99, overflow:"hidden" }}>
+          <div style={{ height:"100%", width:`${progressPct}%`, background:"linear-gradient(90deg,#18664A,#6384ff,#B8720A)", borderRadius:99, transition:"width .35s ease" }}/>
+        </div>
+        {draftRestored && (
+          <div style={{ marginTop:12, padding:"10px 12px", borderRadius:8, background:"var(--teal-bg,#E4F2EB)", color:"var(--teal,#18664A)", fontSize:12, fontWeight:700 }}>
+            Draft restored from this browser. Continue where you left off.
+          </div>
+        )}
+      </div>
+
+      <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"28px 32px", boxShadow:"0 2px 12px rgba(11,29,51,.05)" }}>
+        {!isReview && current && (
+          <>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"center", marginBottom:16 }}>
+              <span style={{ fontSize:11, fontWeight:800, letterSpacing:".09em", textTransform:"uppercase", color:pillarColors[current.pillar] }}>{current.pillar} - Question {qIndex+1} of {ESG_QUESTIONS.length}</span>
+              <span style={{ fontSize:11, fontWeight:800, color:"var(--muted,#67788D)", background:"var(--bg,#F2EBD9)", padding:"5px 9px", borderRadius:99 }}>{current.weight}</span>
+            </div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:26, lineHeight:1.22, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:10 }}>{current.title}</div>
+            <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.6, marginBottom:22, maxWidth:760 }}>{current.help}</p>
+            {current.unit && <div style={{ fontSize:12, fontWeight:800, color:"var(--teal,#18664A)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:8 }}>{current.unit}</div>}
+            {renderQuestionInput()}
+            <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", marginTop:18 }}>
+              <Btn onClick={skipCurrent} variant="ghost" size="sm">I don't know</Btn>
+              {status[current.field] === "skipped" && (
+                <span style={{ fontSize:12, color:"var(--amber,#B8720A)" }}>We'll calculate without this data. For help, contact {ESG_SUPPORT_EMAIL} or {ESG_SUPPORT_PHONE}.</span>
+              )}
+            </div>
+          </>
+        )}
+
+        {isReview && (
+          <>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:24, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:6 }}>Review & submit</div>
+            <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.6, marginBottom:20 }}>
+              Your ESG score will be calculated from the answers available today. Skipped fields can be improved later.
+            </p>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:12, marginBottom:20 }}>
+              {["Environmental","Social","Governance"].map(pillar=>{
+                const qs = ESG_QUESTIONS.filter(q=>q.pillar===pillar);
+                const done = qs.filter(q=>status[q.field]==="answered").length;
+                const skip = qs.filter(q=>status[q.field]==="skipped").length;
+                const color = pillarColors[pillar];
+                return (
+                  <div key={pillar} style={{ padding:"16px", background:`${color}08`, border:`1px solid ${color}25`, borderRadius:10 }}>
+                    <div style={{ fontSize:13, fontWeight:800, color, marginBottom:8 }}>{pillar}</div>
+                    <div style={{ fontSize:24, fontWeight:800, color:"var(--navy,#0B1D33)", lineHeight:1 }}>{done}/{qs.length}</div>
+                    <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:5 }}>{skip} marked I don't know</div>
+                  </div>
+                );
+              })}
+            </div>
+            {skippedFields.length > 0 && (
+              <div style={{ padding:"14px 16px", background:"var(--amber-bg,#FDF3E4)", border:"1px solid rgba(184,114,10,.25)", borderRadius:10, marginBottom:20 }}>
+                <div style={{ fontSize:13, fontWeight:800, color:"var(--amber,#B8720A)", marginBottom:6 }}>Need help finding ESG data?</div>
+                <div style={{ fontSize:13, color:"var(--body,#253446)", lineHeight:1.55 }}>
+                  {skippedFields.length} fields were skipped. We can help calculate or collect this data: {ESG_SUPPORT_EMAIL} / {ESG_SUPPORT_PHONE}.
+                </div>
+              </div>
+            )}
+            <Btn onClick={save} loading={saving} fullWidth size="lg">Submit ESG assessment -&gt;</Btn>
+          </>
+        )}
+      </div>
+
+      <div style={{ display:"flex", justifyContent:"space-between", gap:12, marginTop:16 }}>
+        {qIndex > 0
+          ? <Btn onClick={goPrev} variant="ghost" size="sm">Previous</Btn>
+          : <span/>}
+        {!isReview
+          ? <Btn onClick={goNext} size="sm">Next</Btn>
+          : <span/>}
+      </div>
+    </div>
+  );
+}
 
 function Row({ label, value, hint, hintMsg }) {
   const [hovered, setHovered] = React.useState(false);
