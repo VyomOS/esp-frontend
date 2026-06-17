@@ -1786,6 +1786,7 @@ function VendorESG({ toast }) {
   const [draftRestored, setDraftRestored] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [skipConfirmOpen, setSkipConfirmOpen] = useState(false);
   const [form, setForm] = useState(ESG_EMPTY_FORM);
 
   useEffect(()=>{
@@ -1842,6 +1843,10 @@ function VendorESG({ toast }) {
     setForm(p=>({...p,[field]:val}));
     setStatus(p=>({...p,[field]:"answered"}));
   };
+  const answerAndAdvance = (field, val) => {
+    setAnswered(field, val);
+    window.setTimeout(()=>setQIndex(i=>Math.min(i+1, ESG_QUESTIONS.length)), 180);
+  };
   const skipCurrent = () => {
     if (!current) return;
     setForm(p=>({...p,[current.field]: current.type === "bool" ? false : ""}));
@@ -1850,6 +1855,8 @@ function VendorESG({ toast }) {
   };
   const goNext = () => setQIndex(i=>Math.min(i+1, ESG_QUESTIONS.length));
   const goPrev = () => setQIndex(i=>Math.max(i-1, 0));
+  const supportMailto = `mailto:${ESG_SUPPORT_EMAIL}?subject=${encodeURIComponent("ESG data support")}&body=${encodeURIComponent("Hi Even Cargo team,\n\nI need help calculating ESG data for my vendor assessment.\n\nThanks.")}`;
+  const supportTel = `tel:${ESG_SUPPORT_PHONE.replace(/\s/g, "")}`;
 
   const save = async()=>{
     setSaving(true);
@@ -1865,8 +1872,17 @@ function VendorESG({ toast }) {
       setQIndex(0);
       setDraftRestored(false);
       if (profile) vendorAPI.getESG(profile.id).then(e=>setExisting(e.data)).catch(()=>{});
+      setSkipConfirmOpen(false);
     } catch(err) { toast.error(err.response?.data?.detail||"Failed"); }
     finally { setSaving(false); }
+  };
+
+  const submitFromReview = () => {
+    if (skippedFields.length > 0) {
+      setSkipConfirmOpen(true);
+      return;
+    }
+    save();
   };
 
   const renderQuestionInput = () => {
@@ -1875,8 +1891,8 @@ function VendorESG({ toast }) {
     if (current.type === "bool") {
       return (
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10 }}>
-          <ESGChoiceButton selected={status[current.field]==="answered" && form[current.field] === true} tone={tone} onClick={()=>setAnswered(current.field, true)}>Yes</ESGChoiceButton>
-          <ESGChoiceButton selected={status[current.field]==="answered" && form[current.field] === false} tone={tone} onClick={()=>setAnswered(current.field, false)}>No</ESGChoiceButton>
+          <ESGChoiceButton selected={status[current.field]==="answered" && form[current.field] === true} tone={tone} onClick={()=>answerAndAdvance(current.field, true)}>Yes</ESGChoiceButton>
+          <ESGChoiceButton selected={status[current.field]==="answered" && form[current.field] === false} tone={tone} onClick={()=>answerAndAdvance(current.field, false)}>No</ESGChoiceButton>
           <ESGChoiceButton selected={status[current.field]==="skipped"} tone="#B8720A" onClick={skipCurrent}>I don't know</ESGChoiceButton>
         </div>
       );
@@ -1886,7 +1902,7 @@ function VendorESG({ toast }) {
         <>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))", gap:10 }}>
             {percentOptions.map(o=>(
-              <ESGChoiceButton key={o.value} selected={status[current.field]==="answered" && String(form[current.field])===o.value} tone={tone} onClick={()=>setAnswered(current.field, o.value)}>
+              <ESGChoiceButton key={o.value} selected={status[current.field]==="answered" && String(form[current.field])===o.value} tone={tone} onClick={()=>answerAndAdvance(current.field, o.value)}>
                 {o.label}
               </ESGChoiceButton>
             ))}
@@ -1969,7 +1985,9 @@ function VendorESG({ toast }) {
             <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", marginTop:18 }}>
               <Btn onClick={skipCurrent} variant="ghost" size="sm">I don't know</Btn>
               {status[current.field] === "skipped" && (
-                <span style={{ fontSize:12, color:"var(--amber,#B8720A)" }}>We'll calculate without this data. For help, contact {ESG_SUPPORT_EMAIL} or {ESG_SUPPORT_PHONE}.</span>
+                <span style={{ fontSize:12, color:"var(--amber,#B8720A)" }}>
+                  We'll calculate without this data. For help, contact <a href={supportMailto} style={{ color:"var(--amber,#B8720A)", fontWeight:800 }}>{ESG_SUPPORT_EMAIL}</a> or <a href={supportTel} style={{ color:"var(--amber,#B8720A)", fontWeight:800 }}>{ESG_SUPPORT_PHONE}</a>.
+                </span>
               )}
             </div>
           </>
@@ -1997,14 +2015,14 @@ function VendorESG({ toast }) {
               })}
             </div>
             {skippedFields.length > 0 && (
-              <div style={{ padding:"14px 16px", background:"var(--amber-bg,#FDF3E4)", border:"1px solid rgba(184,114,10,.25)", borderRadius:10, marginBottom:20 }}>
+              <div style={{ padding:"16px 18px", background:"var(--amber-bg,#FDF3E4)", border:"2px solid rgba(184,114,10,.35)", borderRadius:10, marginBottom:20, boxShadow:"0 10px 24px rgba(184,114,10,.10)" }}>
                 <div style={{ fontSize:13, fontWeight:800, color:"var(--amber,#B8720A)", marginBottom:6 }}>Need help finding ESG data?</div>
                 <div style={{ fontSize:13, color:"var(--body,#253446)", lineHeight:1.55 }}>
-                  {skippedFields.length} fields were skipped. We can help calculate or collect this data: {ESG_SUPPORT_EMAIL} / {ESG_SUPPORT_PHONE}.
+                  {skippedFields.length} fields were skipped. We can help calculate or collect this data: <a href={supportMailto} style={{ color:"var(--amber,#B8720A)", fontWeight:800 }}>{ESG_SUPPORT_EMAIL}</a> / <a href={supportTel} style={{ color:"var(--amber,#B8720A)", fontWeight:800 }}>{ESG_SUPPORT_PHONE}</a>.
                 </div>
               </div>
             )}
-            <Btn onClick={save} loading={saving} fullWidth size="lg">Submit ESG assessment -&gt;</Btn>
+            <Btn onClick={submitFromReview} loading={saving} fullWidth size="lg">Submit ESG assessment -&gt;</Btn>
           </>
         )}
       </div>
@@ -2017,6 +2035,30 @@ function VendorESG({ toast }) {
           ? <Btn onClick={goNext} size="sm">Next</Btn>
           : <span/>}
       </div>
+
+      <Modal open={skipConfirmOpen} onClose={()=>setSkipConfirmOpen(false)} title="Submit with missing ESG data?" width={560}>
+        <div style={{ display:"grid", gap:16 }}>
+          <div style={{ padding:"14px 16px", borderRadius:10, background:"var(--amber-bg,#FDF3E4)", border:"2px solid rgba(184,114,10,.35)" }}>
+            <div style={{ fontSize:24, fontWeight:800, color:"var(--amber,#B8720A)", lineHeight:1 }}>{skippedFields.length}</div>
+            <div style={{ fontSize:13, fontWeight:800, color:"var(--navy,#0B1D33)", marginTop:4 }}>
+              questions were not answered
+            </div>
+          </div>
+          <p style={{ fontSize:14, lineHeight:1.65, color:"var(--body,#253446)", margin:0 }}>
+            Missing ESG data can materially lower your score and make your profile look less complete to buyers. That can reduce trust, weaken marketplace ranking, and may reduce service-request opportunities by up to 50% because buyers often filter for vendors with clearer ESG proof.
+          </p>
+          <p style={{ fontSize:13, lineHeight:1.55, color:"var(--muted,#67788D)", margin:0 }}>
+            Even Cargo can help calculate these numbers from bills, payroll data, sourcing records, and policy documents.
+          </p>
+          <div style={{ display:"flex", justifyContent:"space-between", gap:12, flexWrap:"wrap", marginTop:4 }}>
+            <a href={supportMailto}
+              style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", minHeight:42, padding:"0 16px", borderRadius:8, border:"1.5px solid var(--teal,#18664A)", color:"var(--teal,#18664A)", textDecoration:"none", fontSize:13, fontWeight:800 }}>
+              Contact us
+            </a>
+            <Btn onClick={save} loading={saving}>Submit anyway</Btn>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
