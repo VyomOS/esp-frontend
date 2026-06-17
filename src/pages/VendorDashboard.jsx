@@ -2051,11 +2051,11 @@ function VendorESG({ toast }) {
             Even Cargo can help calculate these numbers from bills, payroll data, sourcing records, and policy documents.
           </p>
           <div style={{ display:"flex", justifyContent:"space-between", gap:12, flexWrap:"wrap", marginTop:4 }}>
+            <Btn onClick={save} loading={saving} variant="ghost">Submit anyway</Btn>
             <a href={supportMailto}
-              style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", minHeight:42, padding:"0 16px", borderRadius:8, border:"1.5px solid var(--teal,#18664A)", color:"var(--teal,#18664A)", textDecoration:"none", fontSize:13, fontWeight:800 }}>
+              style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", minHeight:42, padding:"0 18px", borderRadius:8, background:"var(--teal,#18664A)", border:"1.5px solid var(--teal,#18664A)", color:"white", textDecoration:"none", fontSize:13, fontWeight:800 }}>
               Contact us
             </a>
-            <Btn onClick={save} loading={saving}>Submit anyway</Btn>
           </div>
         </div>
       </Modal>
