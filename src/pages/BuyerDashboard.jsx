@@ -4,6 +4,7 @@ import { buyerAPI, vendorAPI, chatAPI, notificationAPI } from "../api/api";
 import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
+import SectorIcon, { sectorIconKey } from "../components/SectorIcon";
 import { useLocation, useNavigate } from "react-router-dom";
 
 /* ─────────────────────────────────── constants ── */
@@ -13,11 +14,11 @@ const SERVICE_CATEGORIES = [
   "Green & Sustainability","Handicrafts & Artisan","Healthcare & Wellness","Construction & Fitout",
 ];
 const PROCUREMENT_INDUSTRIES = [
-  { label:"Hospitals & Healthcare", category:"Healthcare & Wellness", count:"Hospitals, diagnostics, PPE, wellness", code:"HC", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
-  { label:"Automotive", category:"Logistics & Delivery", count:"Fleet, EV, drivers", code:"AU", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
-  { label:"ITES", category:"IT & Digital Services", count:"Tech, support, BPO", code:"IT", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
-  { label:"Gifting", category:"Handicrafts & Artisan", count:"Hampers, merchandise", code:"GF", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
-  { label:"Food", category:"Food & Catering", count:"Meals, pantry, catering", code:"FD", terms:["food","catering","snacks","meals","canteen","beverage","lunch","kitchen"] },
+  { label:"Hospitals & Healthcare", category:"Healthcare & Wellness", count:"Hospitals, diagnostics, PPE, wellness", iconKey:"healthcare", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
+  { label:"Automotive", category:"Logistics & Delivery", count:"Fleet, EV, drivers", iconKey:"automotive", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
+  { label:"ITES", category:"IT & Digital Services", count:"Tech, support, BPO", iconKey:"technology", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
+  { label:"Gifting", category:"Handicrafts & Artisan", count:"Hampers, merchandise", iconKey:"gifting", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
+  { label:"Food", category:"Food & Catering", count:"Meals, pantry, catering", iconKey:"food", terms:["food","catering","snacks","meals","canteen","beverage","lunch","kitchen"] },
 ];
 const QUICK_REQUIREMENTS = [
   { title:"Office meals & catering", meta:"Food vendors, canteen, packed meals", category:"Food & Catering", query:"office meals catering", tag:"Most requested" },
@@ -216,7 +217,7 @@ function BuyerHome({ toast, nav }) {
             return (
               <button key={ind.label} onClick={()=>{ setActiveIndustry(ind.label); setProcurementQuery(q => q || ind.label); startProcurementSearch(ind.label, ind); }}
                 style={{ background:activeChip?"#ECFDF5":"#fff", border:`1.5px solid ${activeChip?"#18664A":"#E2E8F0"}`, borderRadius:7, padding:"13px 12px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", textAlign:"left" }}>
-                <div style={{ width:32, height:32, borderRadius:6, background:activeChip?"#18664A":"#F1F5F9", color:activeChip?"#fff":"#0F172A", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:900, marginBottom:10 }}>{ind.code}</div>
+                <div style={{ width:36, height:36, borderRadius:8, background:activeChip?"#18664A":"#F1F5F9", color:activeChip?"#fff":"#18664A", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:10 }}><SectorIcon iconKey={ind.iconKey} size={22}/></div>
                 <div style={{ fontSize:13, fontWeight:800, color:"#0F172A" }}>{ind.label}</div>
                 <div style={{ fontSize:11, color:"#64748B", marginTop:3, lineHeight:1.35 }}>{ind.count}</div>
               </button>
@@ -265,6 +266,7 @@ function BuyerHome({ toast, nav }) {
             <button key={item.title} onClick={()=>startProcurementSearch(item.query, { category:item.category })}
               style={{ textAlign:"left", background:"#fff", border:"1px solid #E2E8F0", borderRadius:7, padding:"14px 15px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", boxShadow:"0 1px 6px rgba(11,29,51,.04)", minHeight:112 }}>
               <span style={{ display:"inline-flex", fontSize:10, fontWeight:900, color:"#B8720A", background:"#FFF7ED", border:"1px solid #FED7AA", borderRadius:99, padding:"3px 8px", marginBottom:10 }}>{item.tag}</span>
+              <div style={{ color:"#18664A", marginBottom:6 }}><SectorIcon iconKey={sectorIconKey(item.category)} size={24}/></div>
               <div style={{ fontSize:14, fontWeight:800, color:"#0F172A", marginBottom:5 }}>{item.title}</div>
               <div style={{ fontSize:12, color:"#64748B", lineHeight:1.45 }}>{item.meta}</div>
             </button>
@@ -1166,7 +1168,12 @@ function BuyerVendors({ toast }) {
                     {v.is_women_owned && <span style={{ fontSize:10, fontWeight:800, color:"#BE185D", background:"#FDF2F8", border:"1px solid #FBCFE8", padding:"3px 8px", borderRadius:99, flexShrink:0 }}>Women-led</span>}
                   </div>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
-                    <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:16, fontWeight:800, color:"#0F172A", lineHeight:1.3, flex:1, marginRight:8 }}>{v.name||v.organization_name}</div>
+                    <div style={{ display:"flex", gap:9, alignItems:"center", flex:1, marginRight:8 }}>
+                      <div style={{ width:38, height:38, borderRadius:8, background:"#ECFDF5", display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", color:"#18664A", flexShrink:0 }}>
+                        {v.logo_url?<img src={v.logo_url} alt="" style={{width:"100%",height:"100%",objectFit:"contain"}}/>:<SectorIcon iconKey={sectorIconKey(v.category||v.service_categories)} size={22}/>} 
+                      </div>
+                      <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:16, fontWeight:800, color:"#0F172A", lineHeight:1.3 }}>{v.name||v.organization_name}</div>
+                    </div>
                   </div>
                   {v.location && <div style={{ fontSize:12, color:"var(--muted,#67788D)", marginBottom:8 }}>📍 {v.location}</div>}
                   {v.description && <div style={{ fontSize:12, color:"var(--muted,#67788D)", lineHeight:1.5, marginBottom:10 }}>{v.description?.slice(0,70)}…</div>}
@@ -1212,7 +1219,7 @@ function VendorDetailModal({ open, onClose, detail, loading, vendorName, showCon
             {/* ── Header ── */}
             <div style={{ background:"var(--navy,#0B1D33)", borderRadius:12, padding:"22px 26px" }}>
               <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--cream,#F2EBD9)", marginBottom:10 }}>
-                {detail.profile?.organization_name || vendorName}
+                <span style={{display:"inline-flex",alignItems:"center",gap:10}}>{detail.profile?.logo_url&&<img src={detail.profile.logo_url} alt="" style={{width:42,height:42,objectFit:"contain",background:"white",borderRadius:8}}/>}{detail.profile?.organization_name || vendorName}</span>
               </div>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
                 {detail.profile?.is_women_owned && <span style={{ fontSize:10, fontWeight:700, color:"#f9a8d4", background:"rgba(244,114,182,.2)", padding:"3px 9px", borderRadius:99 }}>👩 Women-owned</span>}

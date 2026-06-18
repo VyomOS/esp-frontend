@@ -70,6 +70,7 @@ export const vendorAPI = {
   aiProfileAdvice: data => API.post("/vendor/ai-profile-advice", data),
   aiDescription: data => API.post("/vendor/ai-description", data),
   aiServiceDrafts: data => API.post("/vendor/ai-service-drafts", data),
+  aiSector: data => API.post("/vendor/ai-sector", data),
   aiBidDraft: data => API.post("/vendor/ai-bid-draft", data),
   aiEsgInsight: data => API.post("/vendor/ai-esg-insight", data),
   aiCompanyEnrich: data => API.post("/vendor/ai-company-enrich", data),
@@ -174,6 +175,7 @@ export const taxonomyAPI = {
   categories: () => API.get("/taxonomy/categories"),
   sdgTags: () => API.get("/taxonomy/sdg-tags"),
   certTypes: () => API.get("/taxonomy/certification-types"),
+  sectors: () => API.get("/taxonomy/sectors"),
 };
 
 export default API;

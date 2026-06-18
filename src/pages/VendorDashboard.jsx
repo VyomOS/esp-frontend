@@ -4,6 +4,7 @@ import { vendorAPI, buyerAPI, bidAPI, chatAPI, notificationAPI } from "../api/ap
 import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
+import SectorIcon, { sectorIconKey } from "../components/SectorIcon";
 import { useLocation, useNavigate } from "react-router-dom";
 
 /* ─────────────────────────────────── constants ── */
@@ -145,6 +146,7 @@ function OnboardingWizard({ onComplete, onSkip }) {
   const [cardKey, setCardKey] = useState(0);
   const [smartInput, setSmartInput] = useState("");
   const [smartLoading, setSmartLoading] = useState(false);
+  const [majorCustomersText, setMajorCustomersText] = useState("");
 
   const toggleCat = c => setCats(prev => prev.includes(c) ? prev.filter(x=>x!==c) : [...prev,c]);
 
@@ -833,7 +835,7 @@ function VendorProfile({ toast }) {
   const reload = () => {
     Promise.allSettled([vendorAPI.getMyProfile(), vendorAPI.completeness(), vendorAPI.getMyDocuments()])
       .then(([p,c,d])=>{
-        if (p.status==="fulfilled") { setProfile(p.value.data); setHasProfile(true); setForm(p.value.data); setGstInput(p.value.data.gstin||""); setPanInput(p.value.data.pan||""); setSmartLookup(p.value.data.gstin || p.value.data.pan || p.value.data.organization_name || ""); }
+        if (p.status==="fulfilled") { setProfile(p.value.data); setHasProfile(true); setForm(p.value.data); setMajorCustomersText(parseJSON(p.value.data.major_customers).join(", ")); setGstInput(p.value.data.gstin||""); setPanInput(p.value.data.pan||""); setSmartLookup(p.value.data.gstin || p.value.data.pan || p.value.data.organization_name || ""); }
         else { setHasProfile(false); setForm({}); }
         if (c.status==="fulfilled") setComp(c.value.data);
         if (d.status==="fulfilled") setDocs(d.value.data);
@@ -844,7 +846,7 @@ function VendorProfile({ toast }) {
   const save = async (partial = {}) => {
     setSaving(true);
     try {
-      const payload = { ...form, ...partial, women_ownership_percent: Number(form.women_ownership_percent||0), year_founded: form.year_founded?Number(form.year_founded):null };
+      const payload = { ...form, ...partial, major_customers:toJSON(majorCustomersText.split(",").map(x=>x.trim()).filter(Boolean).slice(0,10)), women_ownership_percent: Number(form.women_ownership_percent||0), year_founded: form.year_founded?Number(form.year_founded):null };
       if (hasProfile) await vendorAPI.updateProfile(payload);
       else { await vendorAPI.createProfile(payload); setHasProfile(true); }
       toast.success("Saved!");
@@ -1035,7 +1037,7 @@ function VendorProfile({ toast }) {
             <Input label="Add website" value={form.website||""} onChange={e=>setForm(p=>({...p,website:e.target.value}))} placeholder="https://yourwebsite.com"/>
             <Input label="Year founded" type="number" value={form.year_founded||""} onChange={e=>setForm(p=>({...p,year_founded:e.target.value}))} placeholder="2018"/>
           </div>
-          <Input label="Major customers (up to 10)" value={majorCustomers.join(", ")} onChange={e=>setForm(p=>({...p,major_customers:toJSON(e.target.value.split(",").map(x=>x.trim()).filter(Boolean).slice(0,10))}))} placeholder="Customer One, Customer Two"/>
+          <Input label="Major customers (up to 10)" value={majorCustomersText} onChange={e=>setMajorCustomersText(e.target.value)} placeholder="Customer One, Customer Two"/>
           <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:14, fontWeight:500, color:"var(--navy,#0B1D33)" }}>
             <input type="checkbox" checked={!!form.is_women_owned} onChange={e=>setForm(p=>({...p,is_women_owned:e.target.checked}))}/>
             Women-owned business
@@ -1053,7 +1055,7 @@ function VendorProfile({ toast }) {
           </div>
         }>
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-          <TagPicker label="Service categories" options={SERVICE_CATEGORIES} selected={cats} onChange={v=>setForm(p=>({...p,service_categories:toJSON(v)}))}/>
+          <TagPicker label="Service categories" options={SERVICE_CATEGORIES} selected={cats} onChange={v=>setForm(p=>({...p,service_categories:toJSON(v)}))} allowCustom showIcons onAddCustom={async name=>{ try { const r=await vendorAPI.aiSector({name}); const value=r.data.name; setForm(p=>({...p,service_categories:toJSON([...new Set([...parseJSON(p.service_categories),value])])})); return r.data; } catch(err) { toast.error(err.response?.data?.detail||"Could not add sector"); throw err; } }}/>
           <TagPicker label="Certifications" options={CERT_TYPES} selected={certs} onChange={v=>setForm(p=>({...p,certification_types:toJSON(v)}))} display={v=>v.replace(/_/g," ")}/>
           <TagPicker label="SDG alignment" options={SDG_TAGS} selected={sdgs} onChange={v=>setForm(p=>({...p,sdg_tags:toJSON(v)}))}/>
         </div>
@@ -1182,6 +1184,7 @@ function VendorServices({ toast }) {
   const [drafts, setDrafts] = useState([]);
   const [draftLoading, setDraftLoading] = useState(false);
   const [approving, setApproving] = useState("");
+  const [websiteImage, setWebsiteImage] = useState("");
 
   const load = ()=>{
     Promise.allSettled([vendorAPI.getMyServices(), vendorAPI.getMyProfile()])
@@ -1211,7 +1214,7 @@ function VendorServices({ toast }) {
   const save = async()=>{
     if(!form.title.trim()||!form.category){ toast.error("Title and category required"); return; }
     setSaving(true);
-    try{ await vendorAPI.addService(form); toast.success("Service added!"); setModal(false); setForm({title:"",description:"",category:"",price_range:"",unit:""}); load(); }
+    try{ const sector=await vendorAPI.aiSector({name:form.category}); await vendorAPI.addService({...form,category:sector.data.name}); toast.success("Service added!"); setModal(false); setForm({title:"",description:"",category:"",price_range:"",unit:""}); load(); }
     catch(err){ toast.error(err.response?.data?.detail||"Failed"); }finally{ setSaving(false); }
   };
 
@@ -1221,6 +1224,7 @@ function VendorServices({ toast }) {
     try {
       const r = await vendorAPI.aiServiceDrafts({ website_url:website.trim(), category:parseJSON(profile?.service_categories)[0] || profile?.category || "" });
       setDrafts(r.data.drafts || []);
+      setWebsiteImage(r.data.image_url || "");
       toast.success(`Created ${(r.data.drafts||[]).length} draft service${(r.data.drafts||[]).length===1?"":"s"}. Review before adding.`);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Could not read this website");
@@ -1234,7 +1238,8 @@ function VendorServices({ toast }) {
     if (!draft?.title?.trim() || !draft?.category?.trim()) { toast.error("Each service needs a title and category"); return; }
     setApproving(String(index));
     try {
-      await vendorAPI.addService(draft);
+      const sector = await vendorAPI.aiSector({name:draft.category});
+      await vendorAPI.addService({...draft,category:sector.data.name});
       removeDraft(index);
       toast.success("Draft added to your services");
       load();
@@ -1262,6 +1267,11 @@ function VendorServices({ toast }) {
             style={{ flex:1, minWidth:220, padding:"10px 12px", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, fontFamily:"'DM Sans',sans-serif" }}/>
           <Btn onClick={generateServiceDrafts} loading={draftLoading} size="sm">Create drafts</Btn>
         </div>
+        {websiteImage && <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:12, paddingTop:12, borderTop:"1px solid var(--border,#D4C9B5)" }}>
+          <img src={websiteImage} alt="Website branding preview" style={{ width:44, height:44, objectFit:"contain", borderRadius:8, background:"white", border:"1px solid var(--border,#D4C9B5)" }}/>
+          <div style={{ flex:1, fontSize:11, color:"var(--muted,#67788D)" }}>Website branding preview. This is not a verification badge.</div>
+          <Btn size="sm" variant="ghost" onClick={async()=>{ await vendorAPI.updateProfile({logo_url:websiteImage}); setProfile(p=>({...p,logo_url:websiteImage})); toast.success("Website image saved to your profile"); }}>Use image</Btn>
+        </div>}
       </div>
 
       {drafts.length>0 && (
@@ -1271,7 +1281,7 @@ function VendorServices({ toast }) {
             <div key={`${draft.title}-${index}`} style={{ background:"var(--cream,#F2EBD9)", border:"1px solid var(--border,#D4C9B5)", borderRadius:10, padding:14 }}>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
                 <Input label="Service title" value={draft.title||""} onChange={e=>updateDraft(index,"title",e.target.value)}/>
-                <Select label="Category" value={draft.category||""} onChange={e=>updateDraft(index,"category",e.target.value)} options={[{value:"",label:"Select category"},...SERVICE_CATEGORIES.map(c=>({value:c,label:c}))]}/>
+                <Input label="Category" value={draft.category||""} onChange={e=>updateDraft(index,"category",e.target.value)} placeholder="Type a sector"/>
               </div>
               <Textarea value={draft.description||""} rows={2} onChange={e=>updateDraft(index,"description",e.target.value)} placeholder="Service description"/>
               <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginTop:10 }}>
@@ -1290,6 +1300,7 @@ function VendorServices({ toast }) {
               <div key={s.id} style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:10, padding:"16px 20px", display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:4 }}>{s.title}</div>
+                  <div style={{ color:"var(--teal,#18664A)", marginBottom:6 }}><SectorIcon iconKey={sectorIconKey(s.category)} size={22}/></div>
                   {s.description && <div style={{ fontSize:13, color:"var(--muted,#67788D)", lineHeight:1.5, marginBottom:8 }}>{s.description}</div>}
                   <div style={{ display:"flex", gap:10, fontSize:12, color:"var(--muted,#67788D)", flexWrap:"wrap" }}>
                     {s.category && <span style={{ background:"var(--teal-bg,#E4F2EB)", color:"var(--teal,#18664A)", padding:"2px 9px", borderRadius:99, fontWeight:600, fontSize:11 }}>{s.category}</span>}
@@ -1306,8 +1317,7 @@ function VendorServices({ toast }) {
       <Modal open={modal} onClose={()=>setModal(false)} title="Add service">
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           <Input label="Service title *" value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="e.g. Organic Cotton Supply"/>
-          <Select label="Category *" value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}
-            options={[{value:"",label:"Select category"},...SERVICE_CATEGORIES.map(c=>({value:c,label:c}))]}/>
+          <Input label="Category or sector *" value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="Type a sector, e.g. Hospital Equipment"/>
           <div>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
               <label style={{ fontSize:11, fontWeight:700, color:"var(--text3)", letterSpacing:".08em", textTransform:"uppercase" }}>Description</label>
@@ -2266,8 +2276,17 @@ function Row({ label, value, hint, hintMsg }) {
   );
 }
 
-function TagPicker({ label, options, selected, onChange, display }) {
+function TagPicker({ label, options, selected, onChange, display, allowCustom=false, onAddCustom, showIcons=false }) {
+  const [custom, setCustom] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [customIcons, setCustomIcons] = useState({});
   const toggle = v => onChange(selected.includes(v) ? selected.filter(x=>x!==v) : [...selected,v]);
+  const addCustom = async () => {
+    const value = custom.trim();
+    if (!value || !onAddCustom) return;
+    setAdding(true);
+    try { const result=await onAddCustom(value); if(result?.name)setCustomIcons(p=>({...p,[result.name]:result.icon_key})); setCustom(""); } catch {} finally { setAdding(false); }
+  };
   return (
     <div>
       {label && <div style={{ fontSize:11, fontWeight:700, color:"var(--text3,#67788D)", letterSpacing:".08em", textTransform:"uppercase", marginBottom:8 }}>{label}</div>}
@@ -2277,11 +2296,16 @@ function TagPicker({ label, options, selected, onChange, display }) {
           return (
             <button key={o} onClick={()=>toggle(o)}
               style={{ padding:"5px 12px", borderRadius:99, border:`1.5px solid ${sel?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, background:sel?"var(--teal-bg,#E4F2EB)":"white", color:sel?"var(--teal,#18664A)":"var(--body,#253446)", cursor:"pointer", fontSize:12, fontWeight:sel?600:400, fontFamily:"'DM Sans',sans-serif", transition:"all .15s" }}>
-              {display ? display(o) : o}
+              <span style={{display:"inline-flex",alignItems:"center",gap:5}}>{showIcons&&<SectorIcon iconKey={customIcons[o]} name={o} size={15}/>} {display ? display(o) : o}</span>
             </button>
           );
         })}
       </div>
+      {allowCustom && <div style={{ display:"flex", gap:7, marginTop:10 }}>
+        <input value={custom} onChange={e=>setCustom(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addCustom();}}} placeholder="Type another sector"
+          style={{ flex:1, padding:"8px 10px", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, fontFamily:"'DM Sans',sans-serif" }}/>
+        <button type="button" onClick={addCustom} disabled={adding||!custom.trim()} style={{ border:"none", borderRadius:6, background:"var(--teal,#18664A)", color:"white", padding:"8px 12px", fontWeight:700, cursor:adding?"wait":"pointer" }}>{adding?"Adding...":"Add sector"}</button>
+      </div>}
     </div>
   );
 }
