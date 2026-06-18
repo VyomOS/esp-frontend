@@ -13,7 +13,7 @@ const SERVICE_CATEGORIES = [
   "Green & Sustainability","Handicrafts & Artisan","Healthcare & Wellness","Construction & Fitout",
 ];
 const PROCUREMENT_INDUSTRIES = [
-  { label:"Healthcare", category:"Healthcare & Wellness", count:"Diagnostics, PPE, wellness", code:"HC", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
+  { label:"Hospitals & Healthcare", category:"Healthcare & Wellness", count:"Hospitals, diagnostics, PPE, wellness", code:"HC", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
   { label:"Automotive", category:"Logistics & Delivery", count:"Fleet, EV, drivers", code:"AU", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
   { label:"ITES", category:"IT & Digital Services", count:"Tech, support, BPO", code:"IT", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
   { label:"Gifting", category:"Handicrafts & Artisan", count:"Hampers, merchandise", code:"GF", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
@@ -118,17 +118,27 @@ function BuyerHome({ toast, nav }) {
   const [loading, setLoading] = useState(true);
   const [procurementQuery, setProcurementQuery] = useState("");
   const [activeIndustry, setActiveIndustry] = useState("");
+  const [buyerProfile, setBuyerProfile] = useState(null);
+  const [locationInput, setLocationInput] = useState("");
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [popularFacts, setPopularFacts] = useState([]);
 
   useEffect(()=>{
-    Promise.allSettled([
-      buyerAPI.getMyRequests(), vendorAPI.getRanked(),
-      notificationAPI.getAll({ unread_only: true, limit: 3 }),
-    ]).then(([r,v,n])=>{
+    buyerAPI.getMyProfile().catch(()=>({data:null})).then(profileResponse=>{
+      const profile = profileResponse.data;
+      setBuyerProfile(profile);
+      setLocationInput(profile?.location || "");
+      return Promise.allSettled([
+        buyerAPI.getMyRequests(), vendorAPI.getRanked(profile?.location?{location:profile.location}:undefined),
+        notificationAPI.getAll({ unread_only: true, limit: 3 }), buyerAPI.marketplacePopular(),
+      ]);
+    }).then(([r,v,n,popular])=>{
       const requests = r.status==="fulfilled" ? r.value.data : [];
       const ranked   = v.status==="fulfilled" ? v.value.data : [];
       setReqs(requests);
       setVendors(ranked.slice(0,4));
       if (n.status==="fulfilled") setNotifs((n.value.data.notifications || n.value.data || []).slice(0,3));
+      if (popular.status==="fulfilled") setPopularFacts(popular.value.data.facts || []);
 
       // Fetch AI suggestions from dedicated endpoint
       buyerAPI.aiSuggestions({ requests, recent_activity: [] })
@@ -136,6 +146,20 @@ function BuyerHome({ toast, nav }) {
         .catch(() => setAiSuggs(buildBuyerSuggestions(requests)));
     }).finally(()=>setLoading(false));
   },[]);
+
+  const saveBuyerLocation = async () => {
+    const location = locationInput.trim();
+    if (!location) { toast.error("Enter your city or region"); return; }
+    setSavingLocation(true);
+    try {
+      await buyerAPI.createProfile({ location });
+      setBuyerProfile(profile=>({...profile,location}));
+      const ranked = await vendorAPI.getRanked({ location });
+      setVendors((ranked.data||[]).slice(0,4));
+      toast.success("Location saved. Same-area suppliers are shown first.");
+    } catch (err) { toast.error(err.response?.data?.detail || "Could not save location"); }
+    finally { setSavingLocation(false); }
+  };
 
   const active     = reqs.filter(r=>r.status==="active");
   const totalBids  = reqs.reduce((s,r)=>s+(r.bid_count||0),0);
@@ -217,14 +241,25 @@ function BuyerHome({ toast, nav }) {
       </div>
 
       {/* ── Hero ── */}
+      <div style={{ background:buyerProfile?.location?"#ECFDF5":"#FFF7ED", border:`1px solid ${buyerProfile?.location?"#A7F3D0":"#FED7AA"}`, borderRadius:8, padding:"13px 16px", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+        <div style={{ flex:1, minWidth:210 }}>
+          <div style={{ fontSize:13, fontWeight:800, color:"#0F172A" }}>{buyerProfile?.location?`Same-area suppliers first: ${buyerProfile.location}`:"Where are you procuring from?"}</div>
+          <div style={{ fontSize:11, color:"#64748B", marginTop:2 }}>Location is used as an area match, not a distance radius.</div>
+        </div>
+        <input value={locationInput} onChange={e=>setLocationInput(e.target.value)} placeholder="City, State"
+          style={{ minWidth:190, padding:"9px 11px", border:"1px solid #CBD5E1", borderRadius:6, fontFamily:"'DM Sans',sans-serif" }}/>
+        <button onClick={saveBuyerLocation} disabled={savingLocation} style={{ background:"#18664A", color:"white", border:"none", borderRadius:6, padding:"10px 14px", fontSize:12, fontWeight:800, cursor:savingLocation?"wait":"pointer" }}>{savingLocation?"Saving...":"Save location"}</button>
+      </div>
+
       <div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:10 }}>
           <div>
             <div style={{ fontSize:16, fontWeight:800, color:"#0F172A" }}>Popular requirements</div>
-            <div style={{ fontSize:12, color:"#64748B", marginTop:2 }}>Frequently sourced by buyers on ESP</div>
+            <div style={{ fontSize:12, color:"#64748B", marginTop:2 }}>Live platform activity; 30-day values are labelled</div>
           </div>
           <button onClick={()=>nav("/dashboard/vendors")} style={{ background:"none", border:"none", color:"#18664A", fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>View all suppliers</button>
         </div>
+        {popularFacts.length>0 && <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:10 }}>{popularFacts.map(f=><span key={f.label} style={{ fontSize:11, color:"#475569", background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:99, padding:"5px 9px" }}><strong style={{ color:"#0F172A" }}>{f.value}</strong> {f.label.toLowerCase()}</span>)}</div>}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", gap:10 }}>
           {QUICK_REQUIREMENTS.map(item=>(
             <button key={item.title} onClick={()=>startProcurementSearch(item.query, { category:item.category })}
@@ -1078,7 +1113,7 @@ function BuyerVendors({ toast }) {
             style={{ width:"100%", padding:"11px 16px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"white", color:"#0F172A", border:"1.5px solid #CBD5E1", borderRadius:7, outline:"none" }}/>
         </div>
         <Select value={category} onChange={e=>setCategory(e.target.value)} style={{ minWidth:180 }}
-          options={[{value:"",label:"All categories"},...SERVICE_CATEGORIES.map(c=>({value:c,label:c}))]}/>
+          options={[{value:"",label:"All categories"},{value:"Healthcare & Wellness",label:"Hospitals & Healthcare"},...SERVICE_CATEGORIES.filter(c=>c!=="Healthcare & Wellness").map(c=>({value:c,label:c}))]}/>
         <Select value={cert} onChange={e=>setCert(e.target.value)} style={{ minWidth:160 }}
           options={[{value:"",label:"Any certification"},...CERT_TYPES.map(c=>({value:c,label:c.replace(/_/g," ")}))]}/>
         <div style={{ width:130 }}>
@@ -1208,7 +1243,8 @@ function VendorDetailModal({ open, onClose, detail, loading, vendorName, showCon
               const certs  = parseJSON(p?.certification_types);
               const sdgs   = parseJSON(p?.sdg_tags);
               const cities = parseJSON(p?.cities_served);
-              const hasInfo = p?.year_founded||p?.team_size_band||p?.annual_turnover_band||p?.website||cats.length||certs.length||sdgs.length||cities.length;
+              const majorCustomers = parseJSON(p?.major_customers);
+              const hasInfo = p?.year_founded||p?.team_size_band||p?.annual_turnover_band||p?.website||cats.length||certs.length||sdgs.length||cities.length||majorCustomers.length;
               if (!hasInfo) return null;
               return (
                 <div>
@@ -1221,6 +1257,7 @@ function VendorDetailModal({ open, onClose, detail, loading, vendorName, showCon
                   </div>
                   {cats.length > 0  && <TagRow label="Service categories" tags={cats} color="var(--navy,#0B1D33)" bg="var(--cream,#F2EBD9)"/>}
                   {cities.length > 0 && <TagRow label="Cities served" tags={cities} color="var(--navy,#0B1D33)" bg="var(--cream,#F2EBD9)"/>}
+                  {majorCustomers.length > 0 && <TagRow label="Major customers" tags={majorCustomers} color="var(--navy,#0B1D33)" bg="var(--cream,#F2EBD9)"/>}
                   {certs.length > 0  && <TagRow label="Certifications" tags={certs.map(c=>c.replace(/_/g," "))} color="var(--teal,#18664A)" bg="var(--teal-bg,#E4F2EB)"/>}
                   {sdgs.length > 0   && <TagRow label="SDG alignment" tags={sdgs} color="var(--amber,#B8720A)" bg="var(--amber-bg,#FDF3E4)"/>}
                 </div>

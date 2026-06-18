@@ -375,6 +375,30 @@ function AdminOverview({ toast, nav }) {
   const [pending, setPending] = useState([]);
   const [insight, setInsight] = useState("");
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const exportPlatformData = async () => {
+    setExporting(true);
+    try {
+      const response = await adminAPI.exportPlatformData();
+      const disposition = response.headers?.["content-disposition"] || "";
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = match?.[1] || "esp-platform-data.zip";
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Platform export downloaded");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not export platform data");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(()=>{
     Promise.allSettled([adminAPI.stats(), adminAPI.pendingVendors(), adminAPI.aiPlatformInsight()])
@@ -467,6 +491,12 @@ function AdminOverview({ toast, nav }) {
               <div style={{ fontSize:12, color:"var(--muted,#67788D)" }}>{q.desc}</div>
             </button>
           ))}
+          <button onClick={exportPlatformData} disabled={exporting}
+            style={{ background:"white", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:12, padding:"16px 18px", textAlign:"left", cursor:exporting?"wait":"pointer", fontFamily:"'DM Sans',sans-serif", opacity:exporting?.65:1 }}>
+            <div style={{ fontSize:20, marginBottom:8 }}>CSV</div>
+            <div style={{ fontSize:13, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:3 }}>{exporting?"Preparing export...":"Export platform data"}</div>
+            <div style={{ fontSize:12, color:"var(--muted,#67788D)" }}>Sanitized CSV bundle</div>
+          </button>
         </div>
       </div>
     </div>
@@ -825,6 +855,30 @@ function AdminNotify({ toast }) {
   const [emailInput, setEmailInput] = useState("");
   const [emails, setEmails]     = useState([]);
   const [sent, setSent]         = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [improving, setImproving] = useState(false);
+
+  useEffect(()=>{
+    const query = emailInput.trim();
+    if (target!=="individual" || query.length<2) {
+      setSuggestions([]);
+      setSearching(false);
+      return;
+    }
+    let active = true;
+    setSearching(true);
+    const timer = setTimeout(()=>{
+      adminAPI.listUsers({ q:query, limit:8 })
+        .then(r=>{
+          if (!active) return;
+          setSuggestions((r.data||[]).filter(u=>u.is_active && !emails.includes(u.email.toLowerCase())));
+        })
+        .catch(()=>{ if (active) setSuggestions([]); })
+        .finally(()=>{ if (active) setSearching(false); });
+    }, 250);
+    return ()=>{ active=false; clearTimeout(timer); };
+  },[emailInput, target, emails]);
 
   const addEmail = () => {
     const v = emailInput.trim().toLowerCase();
@@ -835,6 +889,26 @@ function AdminNotify({ toast }) {
   };
   const removeEmail = e => setEmails(p=>p.filter(x=>x!==e));
   const handleKey   = e => { if (e.key==="Enter"||e.key===",") { e.preventDefault(); addEmail(); } };
+  const selectRecipient = user => {
+    const email = user.email.toLowerCase();
+    if (!emails.includes(email)) setEmails(p=>[...p,email]);
+    setEmailInput("");
+    setSuggestions([]);
+  };
+
+  const improveMessage = async () => {
+    if (!message.trim()) { toast.error("Write a draft message first"); return; }
+    setImproving(true);
+    try {
+      const r = await adminAPI.improveNotification({ message, audience:target, notification_type:type });
+      setMessage(r.data.text || message);
+      toast.success("Draft improved. Review it before sending.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not improve the message");
+    } finally {
+      setImproving(false);
+    }
+  };
 
   const send = async () => {
     if (!message.trim()) { toast.error("Enter a message"); return; }
@@ -915,11 +989,23 @@ function AdminNotify({ toast }) {
                   ))}
                 </div>
               )}
-              <div style={{ display:"flex", gap:8 }}>
+              <div style={{ display:"flex", gap:8, position:"relative" }}>
                 <input value={emailInput} onChange={e=>setEmailInput(e.target.value)} onKeyDown={handleKey}
                   placeholder="Enter email, press Enter or comma…"
                   style={{ flex:1, padding:"10px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"var(--cream,#F2EBD9)", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:6, outline:"none" }}/>
                 <button onClick={addEmail} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"10px 16px", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Add</button>
+                {(searching || suggestions.length>0) && (
+                  <div style={{ position:"absolute", left:0, right:64, top:"calc(100% + 5px)", zIndex:20, background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:8, boxShadow:"0 8px 24px rgba(11,29,51,.14)", overflow:"hidden" }}>
+                    {searching && <div style={{ padding:"10px 12px", fontSize:12, color:"var(--muted,#67788D)" }}>Searching users...</div>}
+                    {!searching && suggestions.map(user=>(
+                      <button key={user.id} type="button" onClick={()=>selectRecipient(user)}
+                        style={{ width:"100%", border:"none", borderBottom:"1px solid var(--border,#D4C9B5)", background:"white", padding:"10px 12px", textAlign:"left", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+                        <span style={{ display:"block", fontSize:13, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{user.name}</span>
+                        <span style={{ display:"block", fontSize:11, color:"var(--muted,#67788D)", marginTop:2 }}>{user.email} - {user.role}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:6 }}>{emails.length} recipient{emails.length!==1?"s":""} added</div>
             </div>
@@ -940,7 +1026,13 @@ function AdminNotify({ toast }) {
 
           {/* Message */}
           <div>
-            <div style={{ fontSize:11, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--navy,#0B1D33)", marginBottom:8 }}>Message *</div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:8 }}>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--navy,#0B1D33)" }}>Message *</div>
+              <button type="button" onClick={improveMessage} disabled={improving||!message.trim()}
+                style={{ background:"white", border:"1px solid var(--teal,#18664A)", color:"var(--teal,#18664A)", borderRadius:6, padding:"6px 10px", fontSize:11, fontWeight:700, cursor:improving||!message.trim()?"not-allowed":"pointer", opacity:improving||!message.trim()?.55:1, fontFamily:"'DM Sans',sans-serif" }}>
+                {improving?"Improving...":"Improve message"}
+              </button>
+            </div>
             <textarea value={message} onChange={e=>setMessage(e.target.value)} rows={4}
               placeholder="Write your notification message…"
               style={{ width:"100%", padding:"11px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"var(--cream,#F2EBD9)", color:"var(--navy,#0B1D33)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:6, outline:"none", resize:"vertical", lineHeight:1.6 }}/>

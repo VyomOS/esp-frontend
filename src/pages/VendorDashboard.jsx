@@ -46,6 +46,19 @@ function parseJSON(val, fallback = []) {
 function toJSON(arr) { return JSON.stringify(arr); }
 const userName = () => localStorage.getItem("name") || "there";
 const fmt = v => v || <span style={{ color:"var(--muted,#67788D)", fontStyle:"italic" }}>Not added</span>;
+const looksLikeGSTIN = v => /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test((v||"").trim().toUpperCase());
+const looksLikePAN = v => /^[A-Z]{5}[0-9]{4}[A-Z]$/.test((v||"").trim().toUpperCase());
+function mergePrefillIntoForm(current, prefill = {}) {
+  const next = { ...current };
+  ["organization_name","location","category","gstin","pan","cin","team_size_band","annual_turnover_band","year_founded"].forEach(field => {
+    if (prefill[field] !== undefined && prefill[field] !== null && prefill[field] !== "") next[field] = String(prefill[field]);
+  });
+  if (Array.isArray(prefill.certification_types)) {
+    const existing = parseJSON(current.certification_types);
+    next.certification_types = toJSON([...new Set([...existing, ...prefill.certification_types])]);
+  }
+  return next;
+}
 
 /* ─────────────────────────────────── Gauge ── */
 function ProfileGauge({ score }) {
@@ -130,6 +143,8 @@ function OnboardingWizard({ onComplete, onSkip }) {
   const [saving, setSaving]   = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [cardKey, setCardKey] = useState(0);
+  const [smartInput, setSmartInput] = useState("");
+  const [smartLoading, setSmartLoading] = useState(false);
 
   const toggleCat = c => setCats(prev => prev.includes(c) ? prev.filter(x=>x!==c) : [...prev,c]);
 
@@ -146,6 +161,30 @@ function OnboardingWizard({ onComplete, onSkip }) {
     finally { setGenLoading(false); }
   };
 
+  const smartPrefill = async () => {
+    const value = smartInput.trim() || form.organization_name.trim();
+    if (!value) { toast.error("Enter company name, GSTIN or PAN"); return; }
+    setSmartLoading(true);
+    try {
+      const payload = { consent:true };
+      if (looksLikeGSTIN(value)) payload.gstin = value.toUpperCase();
+      else if (looksLikePAN(value)) payload.pan = value.toUpperCase();
+      else payload.company_name = value;
+      const r = await vendorAPI.smartPrefill(payload);
+      const prefill = r.data.prefill || {};
+      setForm(p=>mergePrefillIntoForm(p, prefill));
+      if (prefill.organization_name) setSmartInput(prefill.organization_name);
+      if (Array.isArray(prefill.certification_types) && prefill.certification_types.includes("msme_udyam")) {
+        setCats(prev => prev.length ? prev : []);
+      }
+      toast.success(r.data.provider === "stub" ? "Saved in demo mode. Add Surepass token for live registry data." : "Business details fetched.");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not fetch business details");
+    } finally {
+      setSmartLoading(false);
+    }
+  };
+
   const save = async () => {
     if (!form.organization_name.trim()) { toast.error("Enter your organisation name"); return; }
     setSaving(true);
@@ -154,6 +193,9 @@ function OnboardingWizard({ onComplete, onSkip }) {
       location: form.location,
       description: form.description,
       team_size_band: form.team_size_band,
+      gstin: form.gstin,
+      pan: form.pan,
+      cin: form.cin,
       service_categories: toJSON(cats),
       is_women_owned: womenLed === true,
       certification_types: toJSON([]),
@@ -199,11 +241,21 @@ function OnboardingWizard({ onComplete, onSkip }) {
           <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:6 }}>Your business, in 30 seconds</div>
           <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.7, marginBottom:24 }}>No walls of forms. Just a few clicks to get you discovered by buyers.</p>
 
-          {/* Org name */}
+          {/* Smart company lookup */}
           <div style={{ marginBottom:20 }}>
-            <label style={{ fontSize:11, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--navy,#0B1D33)", display:"block", marginBottom:6 }}>Organisation name *</label>
-            <input value={form.organization_name} onChange={e=>setForm(p=>({...p,organization_name:e.target.value}))} placeholder="Your company / cooperative name"
-              style={{ width:"100%", padding:"11px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"var(--cream,#F2EBD9)", color:"var(--navy)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:6, outline:"none" }}/>
+            <label style={{ fontSize:11, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"var(--navy,#0B1D33)", display:"block", marginBottom:6 }}>Company name, GSTIN or PAN *</label>
+            <div style={{ display:"flex", gap:8 }}>
+              <input value={smartInput} onChange={e=>{ setSmartInput(e.target.value); setForm(p=>({...p,organization_name:e.target.value})); }} placeholder="Start with company name, GSTIN or PAN"
+                style={{ flex:1, minWidth:0, padding:"11px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"var(--cream,#F2EBD9)", color:"var(--navy)", border:"1.5px solid var(--border,#D4C9B5)", borderRadius:6, outline:"none" }}/>
+              <button onClick={smartPrefill} disabled={smartLoading}
+                style={{ padding:"0 14px", background:"var(--teal,#18664A)", color:"white", border:"none", borderRadius:6, fontSize:13, fontWeight:700, cursor:smartLoading?"wait":"pointer", fontFamily:"'DM Sans',sans-serif", whiteSpace:"nowrap" }}>
+                {smartLoading ? "Fetching..." : "Auto-fill"}
+              </button>
+            </div>
+            <div style={{ fontSize:11, color:"var(--muted,#67788D)", marginTop:6 }}>We use registry data only with your consent and mark fetched fields separately from self-declared answers.</div>
+            {form.organization_name && form.organization_name !== smartInput && (
+              <div style={{ marginTop:8, fontSize:12, color:"var(--teal,#18664A)", fontWeight:700 }}>Selected: {form.organization_name}</div>
+            )}
           </div>
 
           {/* Service categories */}
@@ -774,11 +826,14 @@ function VendorProfile({ toast }) {
   const [verifying, setVerifying] = useState("");
   const [gstResult, setGstResult] = useState(null);
   const [panResult, setPanResult] = useState(null);
+  const [smartLookup, setSmartLookup] = useState("");
+  const [smartResult, setSmartResult] = useState(null);
+  const [smartLoading, setSmartLoading] = useState(false);
 
   const reload = () => {
     Promise.allSettled([vendorAPI.getMyProfile(), vendorAPI.completeness(), vendorAPI.getMyDocuments()])
       .then(([p,c,d])=>{
-        if (p.status==="fulfilled") { setProfile(p.value.data); setHasProfile(true); setForm(p.value.data); setGstInput(p.value.data.gstin||""); setPanInput(p.value.data.pan||""); }
+        if (p.status==="fulfilled") { setProfile(p.value.data); setHasProfile(true); setForm(p.value.data); setGstInput(p.value.data.gstin||""); setPanInput(p.value.data.pan||""); setSmartLookup(p.value.data.gstin || p.value.data.pan || p.value.data.organization_name || ""); }
         else { setHasProfile(false); setForm({}); }
         if (c.status==="fulfilled") setComp(c.value.data);
         if (d.status==="fulfilled") setDocs(d.value.data);
@@ -839,6 +894,9 @@ function VendorProfile({ toast }) {
   const selectCompany = async (company) => {
     setCompanySuggestions([]);
     setForm(p=>({...p, organization_name: company.name || company.company_name || p.organization_name}));
+    if (company.gstin || company.cin) {
+      runSmartPrefill({ company_name: company.name || company.company_name, gstin: company.gstin, cin: company.cin });
+    }
     setEnrichLoading(true);
     try {
       const r = await vendorAPI.aiCompanyEnrich({ company_name: company.name || company.company_name, cin: company.cin });
@@ -855,14 +913,41 @@ function VendorProfile({ toast }) {
     finally { setEnrichLoading(false); }
   };
 
+  const runSmartPrefill = async (source = {}) => {
+    const value = (source.gstin || source.pan || source.cin || source.company_name || smartLookup || "").trim();
+    if (!value) { toast.error("Enter company name, GSTIN or PAN"); return; }
+    setSmartLoading(true);
+    setSmartResult(null);
+    try {
+      const payload = { consent:true };
+      if (source.gstin || looksLikeGSTIN(value)) payload.gstin = (source.gstin || value).toUpperCase();
+      else if (source.pan || looksLikePAN(value)) payload.pan = (source.pan || value).toUpperCase();
+      else if (source.cin) payload.cin = source.cin;
+      else payload.company_name = source.company_name || value;
+      const r = await vendorAPI.smartPrefill(payload);
+      setSmartResult(r.data);
+      const nextProfile = r.data.profile || {};
+      const prefill = r.data.prefill || {};
+      setForm(p=>mergePrefillIntoForm({ ...p, ...nextProfile }, prefill));
+      if (prefill.gstin) setGstInput(prefill.gstin);
+      if (prefill.pan) setPanInput(prefill.pan);
+      toast.success(r.data.provider === "stub" ? "Saved in demo mode. Add Surepass token for live registry data." : "Business details fetched and saved.");
+      reload();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not fetch business details");
+    } finally {
+      setSmartLoading(false);
+    }
+  };
+
   const verifyGST = async () => {
     setVerifying("gst");
-    try { const r=await vendorAPI.verifyGST({gstin:gstInput}); setGstResult(r.data); if(r.data.success){toast.success("GST verified!"); if(r.data.legal_name&&!form.organization_name)setForm(p=>({...p,organization_name:r.data.legal_name}));} }
+    try { const r=await vendorAPI.verifyGST({gstin:gstInput}); setGstResult(r.data); if(r.data.success){toast.success("GST verified!"); if(r.data.legal_name)setForm(p=>({...p,organization_name:r.data.legal_name, gstin:gstInput, location:r.data.address || p.location})); reload();} }
     catch { toast.error("Verification failed"); } finally { setVerifying(""); }
   };
   const verifyPAN = async () => {
     setVerifying("pan");
-    try { const r=await vendorAPI.verifyPAN({pan:panInput}); setPanResult(r.data); if(r.data.success) toast.success("PAN verified!"); }
+    try { const r=await vendorAPI.verifyPAN({pan:panInput}); setPanResult(r.data); if(r.data.success){ setForm(p=>({...p,pan:panInput})); toast.success("PAN verified!"); reload();} }
     catch { toast.error("Verification failed"); } finally { setVerifying(""); }
   };
   const uploadDoc = async () => {
@@ -879,6 +964,7 @@ function VendorProfile({ toast }) {
   const cats  = parseJSON(form.service_categories);
   const certs = parseJSON(form.certification_types);
   const sdgs  = parseJSON(form.sdg_tags);
+  const majorCustomers = parseJSON(form.major_customers);
 
   // SectionCard is defined at module level above to prevent focus loss on re-render
   const sc = { activeSection:editSection, onEdit:setEdit, onCancel:()=>setEdit(null), onSave:()=>save(), saving };
@@ -905,6 +991,7 @@ function VendorProfile({ toast }) {
             <Row label="Impact"       value={form.impact_statement}/>
             <Row label="Location"     value={form.location} hint="+5%" hintMsg="Add your location to gain +5% profile score"/>
             <Row label="Website"      value={form.website} hint="+5%" hintMsg="Add your website to gain +5% profile score"/>
+            <Row label="Major customers" value={majorCustomers.join(", ")||undefined}/>
             <Row label="Phone"        value={form.phone}/>
             {form.is_women_owned && <Row label="Women-owned" value="Yes ✊"/>}
           </div>
@@ -948,6 +1035,7 @@ function VendorProfile({ toast }) {
             <Input label="Add website" value={form.website||""} onChange={e=>setForm(p=>({...p,website:e.target.value}))} placeholder="https://yourwebsite.com"/>
             <Input label="Year founded" type="number" value={form.year_founded||""} onChange={e=>setForm(p=>({...p,year_founded:e.target.value}))} placeholder="2018"/>
           </div>
+          <Input label="Major customers (up to 10)" value={majorCustomers.join(", ")} onChange={e=>setForm(p=>({...p,major_customers:toJSON(e.target.value.split(",").map(x=>x.trim()).filter(Boolean).slice(0,10))}))} placeholder="Customer One, Customer Two"/>
           <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:14, fontWeight:500, color:"var(--navy,#0B1D33)" }}>
             <input type="checkbox" checked={!!form.is_women_owned} onChange={e=>setForm(p=>({...p,is_women_owned:e.target.checked}))}/>
             Women-owned business
@@ -996,6 +1084,26 @@ function VendorProfile({ toast }) {
           </div>
         }>
         <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+          <div style={{ padding:"14px 16px", border:"1.5px solid var(--teal,#18664A)", background:"var(--teal-bg,#E4F2EB)", borderRadius:10 }}>
+            <div style={{ fontSize:12, fontWeight:800, color:"var(--teal,#18664A)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:6 }}>Smart registry prefill</div>
+            <div style={{ fontSize:13, color:"var(--body,#253446)", lineHeight:1.55, marginBottom:10 }}>
+              Enter company name, GSTIN or PAN. We fetch only the useful KYB data for this profile and save verified fields.
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <input value={smartLookup} onChange={e=>setSmartLookup(e.target.value.toUpperCase())} placeholder="Company name, GSTIN or PAN"
+                style={{ flex:1, minWidth:0, padding:"10px 14px", fontSize:14, fontFamily:"'DM Sans',sans-serif", background:"white", color:"var(--navy,#0B1D33)", border:"1.5px solid rgba(24,102,74,.25)", borderRadius:6, outline:"none" }}/>
+              <Btn onClick={()=>runSmartPrefill()} loading={smartLoading} size="sm">Auto-fill</Btn>
+            </div>
+            {smartResult && (
+              <div style={{ marginTop:10, display:"flex", gap:8, flexWrap:"wrap" }}>
+                {(smartResult.checks || []).slice(0,4).map((c,i)=>(
+                  <span key={i} style={{ fontSize:11, fontWeight:800, color:c.success?"var(--teal,#18664A)":"var(--amber,#B8720A)", background:"white", border:"1px solid rgba(24,102,74,.18)", padding:"4px 8px", borderRadius:99 }}>
+                    {c.type}: {c.success ? (c.stub ? "demo" : "found") : "not found"}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
           <div>
             <label style={{ fontSize:11, fontWeight:700, color:"var(--text3)", letterSpacing:".08em", textTransform:"uppercase", display:"block", marginBottom:6 }}>GST Number</label>
             <div style={{ display:"flex", gap:8 }}>
@@ -1069,8 +1177,22 @@ function VendorServices({ toast }) {
   const [saving, setSaving]     = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [genLoading, setGenLoading] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [website, setWebsite] = useState("");
+  const [drafts, setDrafts] = useState([]);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [approving, setApproving] = useState("");
 
-  const load = ()=>{ vendorAPI.getMyServices().then(r=>setServices(r.data)).finally(()=>setLoading(false)); };
+  const load = ()=>{
+    Promise.allSettled([vendorAPI.getMyServices(), vendorAPI.getMyProfile()])
+      .then(([s,p])=>{
+        if (s.status==="fulfilled") setServices(s.value.data);
+        if (p.status==="fulfilled") {
+          setProfile(p.value.data);
+          setWebsite(current=>current || p.value.data.website || "");
+        }
+      }).finally(()=>setLoading(false));
+  };
   useEffect(()=>{ load(); },[]);
 
   const genDescription = async () => {
@@ -1093,6 +1215,33 @@ function VendorServices({ toast }) {
     catch(err){ toast.error(err.response?.data?.detail||"Failed"); }finally{ setSaving(false); }
   };
 
+  const generateServiceDrafts = async () => {
+    if (!website.trim()) { toast.error("Add your public website URL first"); return; }
+    setDraftLoading(true);
+    try {
+      const r = await vendorAPI.aiServiceDrafts({ website_url:website.trim(), category:parseJSON(profile?.service_categories)[0] || profile?.category || "" });
+      setDrafts(r.data.drafts || []);
+      toast.success(`Created ${(r.data.drafts||[]).length} draft service${(r.data.drafts||[]).length===1?"":"s"}. Review before adding.`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not read this website");
+    } finally { setDraftLoading(false); }
+  };
+
+  const updateDraft = (index, field, value) => setDrafts(items=>items.map((item,i)=>i===index?{...item,[field]:value}:item));
+  const removeDraft = index => setDrafts(items=>items.filter((_,i)=>i!==index));
+  const approveDraft = async (index) => {
+    const draft = drafts[index];
+    if (!draft?.title?.trim() || !draft?.category?.trim()) { toast.error("Each service needs a title and category"); return; }
+    setApproving(String(index));
+    try {
+      await vendorAPI.addService(draft);
+      removeDraft(index);
+      toast.success("Draft added to your services");
+      load();
+    } catch (err) { toast.error(err.response?.data?.detail || "Could not add service"); }
+    finally { setApproving(""); }
+  };
+
   if(loading) return <div style={{display:"flex",flexDirection:"column",gap:10}}>{[...Array(3)].map((_,i)=><div key={i} className="skeleton" style={{height:70,borderRadius:10}}/>)}</div>;
 
   return (
@@ -1104,6 +1253,35 @@ function VendorServices({ toast }) {
         </div>
         <Btn onClick={()=>setModal(true)} size="sm">+ Add service</Btn>
       </div>
+
+      <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"18px 20px", marginBottom:18 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:4 }}>Draft services from your website</div>
+        <div style={{ fontSize:12, color:"var(--muted,#67788D)", lineHeight:1.5, marginBottom:12 }}>We will read public website text and suggest editable drafts. Nothing is added until you approve it.</div>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          <input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourwebsite.com"
+            style={{ flex:1, minWidth:220, padding:"10px 12px", border:"1px solid var(--border,#D4C9B5)", borderRadius:6, fontFamily:"'DM Sans',sans-serif" }}/>
+          <Btn onClick={generateServiceDrafts} loading={draftLoading} size="sm">Create drafts</Btn>
+        </div>
+      </div>
+
+      {drafts.length>0 && (
+        <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"var(--teal,#18664A)" }}>{drafts.length} draft{drafts.length===1?"":"s"} ready for review</div>
+          {drafts.map((draft,index)=>(
+            <div key={`${draft.title}-${index}`} style={{ background:"var(--cream,#F2EBD9)", border:"1px solid var(--border,#D4C9B5)", borderRadius:10, padding:14 }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+                <Input label="Service title" value={draft.title||""} onChange={e=>updateDraft(index,"title",e.target.value)}/>
+                <Select label="Category" value={draft.category||""} onChange={e=>updateDraft(index,"category",e.target.value)} options={[{value:"",label:"Select category"},...SERVICE_CATEGORIES.map(c=>({value:c,label:c}))]}/>
+              </div>
+              <Textarea value={draft.description||""} rows={2} onChange={e=>updateDraft(index,"description",e.target.value)} placeholder="Service description"/>
+              <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginTop:10 }}>
+                <Btn onClick={()=>removeDraft(index)} variant="ghost" size="sm">Remove draft</Btn>
+                <Btn onClick={()=>approveDraft(index)} loading={approving===String(index)} size="sm">Add service</Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {services.length === 0
         ? <Empty icon="◇" title="No services yet" desc="Add services so buyers can see exactly what you offer" action={<Btn onClick={()=>setModal(true)}>Add your first service</Btn>}/>
