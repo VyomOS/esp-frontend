@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+export const resolveMediaUrl = value => !value ? "" : value.startsWith("/") ? `${BASE}${value}` : value;
 
 const API = axios.create({ baseURL: BASE });
 
@@ -20,7 +21,7 @@ API.interceptors.response.use(
   err => {
     if (err.response?.status === 401) {
       localStorage.clear();
-      window.location.href = "/";
+      window.location.href = "/signin";
     }
     return Promise.reject(err);
   }
@@ -35,6 +36,11 @@ export const authAPI = {
   resetPassword: data => API.post("/auth/reset-password", data),
   changePassword: data => API.post("/auth/change-password", data),
   me: () => API.get("/auth/me"),
+};
+
+export const marketplaceAPI = {
+  listServices: params => API.get("/marketplace/services", { params }),
+  getService: id => API.get(`/marketplace/services/${id}`),
 };
 
 export const vendorAPI = {
@@ -56,8 +62,11 @@ export const vendorAPI = {
   companySuggest: q => API.get("/vendor/company-suggest", { params: { q } }),
   smartPrefill: data => API.post("/vendor/smart-prefill", data),
   addService: data => API.post("/vendor/services", data),
+  updateService: (id, data) => API.patch(`/vendor/services/${id}`, data),
   getMyServices: () => API.get("/vendor/services/mine"),
   deleteService: id => API.delete(`/vendor/services/${id}`),
+  uploadServiceImage: (id, file) => { const fd = new FormData(); fd.append("file", file); return API.post(`/vendor/services/${id}/image`, fd, { headers: { "Content-Type":"multipart/form-data" } }); },
+  generateServiceImage: (id, direction="") => API.post(`/vendor/services/${id}/generate-image`, { direction }),
   uploadDocument: fd => API.post("/vendor/documents/upload", fd, { headers: { "Content-Type": "multipart/form-data" } }),
   getMyDocuments: () => API.get("/vendor/documents/mine"),
   deleteDocument: id => API.delete(`/vendor/documents/${id}`),

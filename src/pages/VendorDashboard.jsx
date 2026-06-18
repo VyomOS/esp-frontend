@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
-import { vendorAPI, buyerAPI, bidAPI, chatAPI, notificationAPI } from "../api/api";
+import { vendorAPI, buyerAPI, bidAPI, chatAPI, notificationAPI, resolveMediaUrl } from "../api/api";
 import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
@@ -403,17 +403,17 @@ export default function VendorDashboard() {
       {/* Tab bar */}
       <div style={{ display:"flex", gap:0, borderBottom:"1.5px solid var(--border)", marginBottom:28, flexWrap:"wrap" }}>
         {[
-          { id:"home",          label:"Home",         icon:"⬡" },
-          { id:"profile",       label:"Profile",      icon:"◈" },
-          { id:"services",      label:"Services",     icon:"◇" },
-          { id:"opportunities", label:"Opportunities",icon:"📋" },
-          { id:"esg",           label:"ESG",          icon:"🌱" },
+          { id:"home",          label:"Home",         icon:"home" },
+          { id:"profile",       label:"Profile",      icon:"user" },
+          { id:"services",      label:"Services",     icon:"grid" },
+          { id:"opportunities", label:"Opportunities",icon:"clipboard" },
+          { id:"esg",           label:"ESG",          icon:"leaf" },
         ].map(t=>{
           const active = t.id === tab;
           return (
             <button key={t.id} onClick={()=>nav(t.id==="home"?"/dashboard":`/dashboard/${t.id}`)}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 18px", background:"none", border:"none", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontWeight:600, fontSize:13, letterSpacing:".01em", color:active?"var(--navy,#0B1D33)":"var(--text3,#67788D)", borderBottom:`2px solid ${active?"var(--teal,#18664A)":"transparent"}`, marginBottom:"-1.5px", transition:"all .16s" }}>
-              <span style={{ fontSize:14 }}>{t.icon}</span>{t.label}
+              <span style={{ display:"flex" }}><SectorIcon iconKey={t.icon} size={16}/></span>{t.label}
             </button>
           );
         })}
@@ -1175,7 +1175,10 @@ function VendorServices({ toast }) {
   const [services, setServices] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [modal, setModal]       = useState(false);
-  const [form, setForm]         = useState({ title:"", description:"", category:"", price_range:"", unit:"" });
+  const emptyService = { title:"", description:"", category:"", price_range:"", unit:"", base_price:"", offer_price:"", currency:"INR", pricing_type:"starting_at", offer_active:false, offer_starts_at:"", offer_ends_at:"" };
+  const [form, setForm]         = useState(emptyService);
+  const [editingService, setEditingService] = useState(null);
+  const [imageBusy, setImageBusy] = useState("");
   const [saving, setSaving]     = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [genLoading, setGenLoading] = useState(false);
@@ -1214,9 +1217,22 @@ function VendorServices({ toast }) {
   const save = async()=>{
     if(!form.title.trim()||!form.category){ toast.error("Title and category required"); return; }
     setSaving(true);
-    try{ const sector=await vendorAPI.aiSector({name:form.category}); await vendorAPI.addService({...form,category:sector.data.name}); toast.success("Service added!"); setModal(false); setForm({title:"",description:"",category:"",price_range:"",unit:""}); load(); }
+    try{
+      const sector=await vendorAPI.aiSector({name:form.category});
+      const payload={...form,category:sector.data.name,base_price:form.base_price===""?null:Number(form.base_price),offer_price:form.offer_price===""?null:Number(form.offer_price),offer_starts_at:form.offer_starts_at||null,offer_ends_at:form.offer_ends_at||null};
+      if(editingService) await vendorAPI.updateService(editingService.id,payload); else await vendorAPI.addService(payload);
+      toast.success(editingService?"Service updated":"Service added!"); setModal(false); setEditingService(null); setForm(emptyService); load();
+    }
     catch(err){ toast.error(err.response?.data?.detail||"Failed"); }finally{ setSaving(false); }
   };
+
+  const editService = service => {
+    setEditingService(service);
+    setForm({...emptyService,...service,base_price:service.base_price??"",offer_price:service.offer_price??"",offer_starts_at:service.offer_starts_at?.slice(0,16)||"",offer_ends_at:service.offer_ends_at?.slice(0,16)||""});
+    setModal(true);
+  };
+  const generateImage = async service => { setImageBusy(`ai-${service.id}`); try { await vendorAPI.generateServiceImage(service.id); toast.success("Catalogue photo generated and saved"); load(); } catch(err){ toast.error(err.response?.data?.detail||"Could not generate photo"); } finally { setImageBusy(""); } };
+  const uploadImage = async (service,file) => { if(!file)return; setImageBusy(`upload-${service.id}`); try { await vendorAPI.uploadServiceImage(service.id,file); toast.success("Service photo saved"); load(); } catch(err){ toast.error(err.response?.data?.detail||"Could not upload photo"); } finally { setImageBusy(""); } };
 
   const generateServiceDrafts = async () => {
     if (!website.trim()) { toast.error("Add your public website URL first"); return; }
@@ -1256,7 +1272,7 @@ function VendorServices({ toast }) {
           <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:22, fontWeight:700, color:"var(--navy,#0B1D33)" }}>Your services</h2>
           <p style={{ fontSize:13, color:"var(--muted,#67788D)", marginTop:4 }}>What you offer to buyers</p>
         </div>
-        <Btn onClick={()=>setModal(true)} size="sm">+ Add service</Btn>
+        <Btn onClick={()=>{setEditingService(null);setForm(emptyService);setModal(true)}} size="sm">+ Add service</Btn>
       </div>
 
       <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"18px 20px", marginBottom:18 }}>
@@ -1297,24 +1313,21 @@ function VendorServices({ toast }) {
         ? <Empty icon="◇" title="No services yet" desc="Add services so buyers can see exactly what you offer" action={<Btn onClick={()=>setModal(true)}>Add your first service</Btn>}/>
         : <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {services.map(s=>(
-              <div key={s.id} style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:10, padding:"16px 20px", display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, boxShadow:"0 2px 8px rgba(11,29,51,.05)" }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:15, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:4 }}>{s.title}</div>
-                  <div style={{ color:"var(--teal,#18664A)", marginBottom:6 }}><SectorIcon iconKey={sectorIconKey(s.category)} size={22}/></div>
-                  {s.description && <div style={{ fontSize:13, color:"var(--muted,#67788D)", lineHeight:1.5, marginBottom:8 }}>{s.description}</div>}
-                  <div style={{ display:"flex", gap:10, fontSize:12, color:"var(--muted,#67788D)", flexWrap:"wrap" }}>
-                    {s.category && <span style={{ background:"var(--teal-bg,#E4F2EB)", color:"var(--teal,#18664A)", padding:"2px 9px", borderRadius:99, fontWeight:600, fontSize:11 }}>{s.category}</span>}
-                    {s.price_range && <span>💰 {s.price_range}</span>}
-                    {s.unit && <span>📦 per {s.unit}</span>}
-                  </div>
+              <div key={s.id} className="vendor-service-card">
+                <div className="vendor-service-photo">{s.image_url ? <img src={resolveMediaUrl(s.image_url)} alt={`${s.title} catalogue`}/> : <span>Add a real catalogue photo</span>}</div>
+                <div style={{minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:5}}><strong style={{fontSize:15,color:"var(--navy)"}}>{s.title}</strong>{s.offer_active&&<span className="live-offer-chip">OFFER LIVE</span>}</div>
+                  {s.description&&<div style={{fontSize:12,color:"var(--muted)",lineHeight:1.5,marginBottom:9}}>{s.description}</div>}
+                  <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap",fontSize:11}}><span className="service-category-chip">{s.category}</span>{s.base_price!=null&&<strong>{s.currency} {s.offer_active&&s.offer_price!=null?s.offer_price:s.base_price}{s.unit?` / ${s.unit}`:""}</strong>}{s.offer_active&&s.offer_price!=null&&<del>{s.currency} {s.base_price}</del>}{s.base_price==null&&<span>{s.price_range||"Request a quote"}</span>}</div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:13}}><Btn onClick={()=>generateImage(s)} loading={imageBusy===`ai-${s.id}`} variant="ghost" size="sm">Generate photo</Btn><label className="service-upload-label">{imageBusy===`upload-${s.id}`?"Uploading...":"Upload photo"}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>uploadImage(s,e.target.files?.[0])} hidden/></label></div>
                 </div>
-                <Btn onClick={()=>setConfirmDelete(s.id)} variant="ghost" size="sm">Remove</Btn>
+                <div style={{display:"flex",flexDirection:"column",gap:7}}><Btn onClick={()=>editService(s)} variant="ghost" size="sm">Edit & offer</Btn><Btn onClick={()=>setConfirmDelete(s.id)} variant="ghost" size="sm">Remove</Btn></div>
               </div>
             ))}
           </div>
       }
 
-      <Modal open={modal} onClose={()=>setModal(false)} title="Add service">
+      <Modal open={modal} onClose={()=>{setModal(false);setEditingService(null)}} title={editingService?"Edit service & offer":"Add service"}>
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           <Input label="Service title *" value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="e.g. Organic Cotton Supply"/>
           <Input label="Category or sector *" value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="Type a sector, e.g. Hospital Equipment"/>
@@ -1325,11 +1338,11 @@ function VendorServices({ toast }) {
             </div>
             <Textarea value={form.description} rows={3} onChange={e=>setForm(p=>({...p,description:e.target.value}))} placeholder="Describe what you provide…"/>
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-            <Input label="Price range" value={form.price_range} onChange={e=>setForm(p=>({...p,price_range:e.target.value}))} placeholder="₹500–₹2000"/>
-            <Input label="Unit" value={form.unit} onChange={e=>setForm(p=>({...p,unit:e.target.value}))} placeholder="kg / piece / hour"/>
-          </div>
-          <Btn onClick={save} loading={saving} fullWidth>Add service</Btn>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}><Input label="Base price" type="number" min="0" step="0.01" value={form.base_price} onChange={e=>setForm(p=>({...p,base_price:e.target.value}))} placeholder="85"/><Input label="Unit" value={form.unit} onChange={e=>setForm(p=>({...p,unit:e.target.value}))} placeholder="meal / month / employee"/></div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}><div><label className="field-label">Pricing style</label><select value={form.pricing_type} onChange={e=>setForm(p=>({...p,pricing_type:e.target.value}))} className="catalogue-select"><option value="fixed">Fixed price</option><option value="starting_at">Starting at</option><option value="range">Price range</option><option value="quote">Request a quote</option></select></div><Input label="Currency" value={form.currency} maxLength={3} onChange={e=>setForm(p=>({...p,currency:e.target.value.toUpperCase()}))}/></div>
+          <div style={{background:"#F8F2FB",border:"1px solid #E6D7EC",borderRadius:12,padding:14}}><label style={{display:"flex",alignItems:"center",gap:9,fontSize:12,fontWeight:800,color:"#421657",marginBottom:12}}><input type="checkbox" checked={form.offer_active} onChange={e=>setForm(p=>({...p,offer_active:e.target.checked}))}/> Run a current offer</label>{form.offer_active&&<><Input label="Offer price" type="number" min="0" step="0.01" value={form.offer_price} onChange={e=>setForm(p=>({...p,offer_price:e.target.value}))} placeholder="69"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}><Input label="Starts" type="datetime-local" value={form.offer_starts_at} onChange={e=>setForm(p=>({...p,offer_starts_at:e.target.value}))}/><Input label="Ends" type="datetime-local" value={form.offer_ends_at} onChange={e=>setForm(p=>({...p,offer_ends_at:e.target.value}))}/></div></>}</div>
+          {!form.base_price&&<Input label="Legacy price text (optional)" value={form.price_range} onChange={e=>setForm(p=>({...p,price_range:e.target.value}))} placeholder="Custom quote or ₹500–₹2000"/>}
+          <Btn onClick={save} loading={saving} fullWidth>{editingService?"Save service & offer":"Add service"}</Btn>
         </div>
       </Modal>
       <ConfirmModal open={!!confirmDelete} onClose={()=>setConfirmDelete(null)} onConfirm={async()=>{ await vendorAPI.deleteService(confirmDelete); toast.success("Removed"); load(); }} title="Remove service" message="Remove this service?" variant="danger"/>

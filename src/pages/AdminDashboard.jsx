@@ -4,6 +4,7 @@ import { adminAPI } from "../api/api";
 import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
+import SectorIcon from "../components/SectorIcon";
 import { useLocation, useNavigate } from "react-router-dom";
 
 /* ─────────────────────────────────── helpers ── */
@@ -340,19 +341,19 @@ export default function AdminDashboard() {
     <Layout>
       <div style={{ display:"flex", gap:0, borderBottom:"1.5px solid var(--border,#D4C9B5)", marginBottom:28, flexWrap:"wrap" }}>
         {[
-          { id:"overview",  label:"Overview",   icon:"⬡" },
-          { id:"approvals", label:"Approvals",  icon:"◈" },
-          { id:"users",     label:"Users",      icon:"◇" },
-          { id:"impact",    label:"Impact",     icon:"🌱" },
-          { id:"notify",    label:"Notify",     icon:"📢" },
-          { id:"analytics", label:"Analytics",  icon:"📊" },
-          { id:"team",      label:"Team",       icon:"🔑" },
+          { id:"overview",  label:"Overview",   icon:"home" },
+          { id:"approvals", label:"Approvals",  icon:"check" },
+          { id:"users",     label:"Users",      icon:"users" },
+          { id:"impact",    label:"Impact",     icon:"leaf" },
+          { id:"notify",    label:"Notify",     icon:"bell" },
+          { id:"analytics", label:"Analytics",  icon:"chart" },
+          { id:"team",      label:"Team",       icon:"key" },
         ].map(t=>{
           const active = t.id === tab;
           return (
             <button key={t.id} onClick={()=>nav(t.id==="overview"?"/dashboard":`/dashboard/${t.id}`)}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 18px", background:"none", border:"none", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontWeight:600, fontSize:13, color:active?"var(--navy,#0B1D33)":"var(--text3,#67788D)", borderBottom:`2px solid ${active?"var(--teal,#18664A)":"transparent"}`, marginBottom:"-1.5px", transition:"all .16s" }}>
-              <span style={{ fontSize:14 }}>{t.icon}</span>{t.label}
+              <span style={{ display:"flex" }}><SectorIcon iconKey={t.icon} size={16}/></span>{t.label}
             </button>
           );
         })}

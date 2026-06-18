@@ -7,7 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Landing from "./pages/Landing";
 
 function ProtectedRoute({ children }) {
-  return localStorage.getItem("token") ? children : <Navigate to="/" replace />;
+  return localStorage.getItem("token") ? children : <Navigate to="/signin" replace />;
 }
 
 export default function App() {
@@ -17,8 +17,9 @@ export default function App() {
         <ToastProvider>
           <AuthProvider>
             <Routes>
-              <Route path="/"                     element={<Login />} />
-              <Route path="/home"                 element={<Landing />} />
+              <Route path="/"                     element={<Landing />} />
+              <Route path="/home"                 element={<Navigate to="/" replace />} />
+              <Route path="/signin"               element={<Login initialPhase="login" />} />
               <Route path="/register"             element={<Register />} />
               <Route path="/forgot-password"      element={<ForgotPassword />} />
               <Route path="/reset-password"       element={<ResetPassword />} />

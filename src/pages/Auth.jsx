@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { authAPI } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import SectorIcon from "../components/SectorIcon";
 
 /* ─────────────────────────────────────────── shared ── */
 
@@ -75,8 +76,8 @@ const Q0 = {
   text: "I'm here to...",
   twoCol: true,
   opts: [
-    { label: "Source from verified,\nESG-scored vendors", desc: "Find impact-first suppliers for my organisation's procurement", value: "buyer", icon: "🔍" },
-    { label: "Connect my business\nwith corporate buyers", desc: "I represent a women-led, MSME, cooperative or social enterprise", value: "vendor", icon: "🌱" },
+    { label: "Source from verified,\nESG-scored vendors", desc: "Find impact-first suppliers for my organisation's procurement", value: "buyer", icon: "search" },
+    { label: "Connect my business\nwith corporate buyers", desc: "I represent a women-led, MSME, cooperative or social enterprise", value: "vendor", icon: "grid" },
   ]
 };
 
@@ -153,13 +154,13 @@ const TICKER = [
 
 /* ─────────────────────────────────────────── Login ── */
 
-export function Login() {
+export function Login({ initialPhase="quiz" }) {
   const { login } = useAuth();
   const navigate  = useNavigate();
   const toast     = useToast();
 
   // phase: 'quiz' | 'signup' | 'login'
-  const [phase, setPhase]     = useState('quiz');
+  const [phase, setPhase]     = useState(initialPhase);
   // quiz
   const [step, setStep]       = useState(0);
   const [role, setRole]       = useState(null);
@@ -407,7 +408,7 @@ export function Login() {
                       }}
                       onMouseEnter={e=>{ if(selIdx===null){ e.currentTarget.style.borderColor="var(--teal,#18664A)"; e.currentTarget.style.background="var(--teal-bg,#E4F2EB)"; } }}
                       onMouseLeave={e=>{ if(selIdx!==i){ e.currentTarget.style.borderColor="var(--border,#D4C9B5)"; e.currentTarget.style.background="var(--cream,#F2EBD9)"; } }}>
-                      <div style={{ fontSize:26, marginBottom:12 }}>{opt.icon}</div>
+                      <div style={{ color:"var(--teal,#18664A)", marginBottom:12, display:"flex", justifyContent:"center" }}><SectorIcon iconKey={opt.icon} size={28}/></div>
                       <div style={{ fontSize:14, fontWeight:600, color:"var(--navy,#0B1D33)", lineHeight:1.4, marginBottom:8, whiteSpace:"pre-line" }}>{opt.label}</div>
                       <div style={{ fontSize:12, color:"var(--muted,#67788D)", lineHeight:1.5 }}>{opt.desc}</div>
                       {selIdx === i && (
@@ -608,9 +609,11 @@ export function Login() {
 /* ─────────────────────────────────────── Register ── */
 
 export function Register() {
+  const [params] = useSearchParams();
+  const requestedRole = params.get("role");
   const navigate = useNavigate();
   const toast    = useToast();
-  const [form, setForm]     = useState({ name:"", email:"", password:"", confirm:"", role:"vendor" });
+  const [form, setForm]     = useState({ name:"", email:"", password:"", confirm:"", role:requestedRole === "buyer" ? "buyer" : "vendor" });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [done, setDone]     = useState(false);
@@ -640,7 +643,7 @@ export function Register() {
       <div style={{ textAlign:"center", padding:"8px 0" }}>
         <div style={{ width:56, height:56, borderRadius:"50%", background:"var(--teal-bg,#E4F2EB)", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px", fontSize:24 }}>✓</div>
         <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.7, marginBottom:24 }}>We sent a verification link to <strong style={{ color:"var(--navy,#0B1D33)" }}>{form.email}</strong>. Click it to activate your account.</p>
-        <button onClick={()=>navigate("/")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Go to login →</button>
+        <button onClick={()=>navigate("/signin")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Go to login →</button>
       </div>
     </AuthShell>
   );
@@ -651,10 +654,10 @@ export function Register() {
         <div style={{ marginBottom:20 }}>
           <div style={{ fontSize:12, fontWeight:600, color:"var(--navy,#0B1D33)", marginBottom:8, letterSpacing:".02em" }}>I am joining as</div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-            {[{ val:"vendor", label:"Vendor", desc:"Supply goods & services", icon:"🌱" }, { val:"buyer", label:"Buyer", desc:"Source from impact vendors", icon:"🔍" }].map(r => (
+            {[{ val:"vendor", label:"Vendor", desc:"Supply goods & services", icon:"grid" }, { val:"buyer", label:"Buyer", desc:"Source from impact vendors", icon:"search" }].map(r => (
               <button key={r.val} type="button" onClick={()=>setForm(p=>({...p,role:r.val}))}
                 style={{ padding:"14px 12px", borderRadius:8, textAlign:"center", cursor:"pointer", border:`2px solid ${form.role===r.val?"var(--teal,#18664A)":"var(--border,#D4C9B5)"}`, background:form.role===r.val?"var(--teal-bg,#E4F2EB)":"var(--cream,#F2EBD9)", transition:"all .15s" }}>
-                <div style={{ fontSize:20, marginBottom:4 }}>{r.icon}</div>
+                <div style={{ color:"var(--teal,#18664A)", marginBottom:6, display:"flex", justifyContent:"center" }}><SectorIcon iconKey={r.icon} size={24}/></div>
                 <div style={{ fontSize:13, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:2 }}>{r.label}</div>
                 <div style={{ fontSize:11, color:"var(--muted,#67788D)" }}>{r.desc}</div>
               </button>
@@ -667,7 +670,7 @@ export function Register() {
         <FormInput label="Confirm password" type="password" placeholder="Same as above" value={form.confirm} onChange={e=>setForm(p=>({...p,confirm:e.target.value}))} error={errors.confirm} autoComplete="new-password"/>
         <SubmitBtn loading={loading}>Create account →</SubmitBtn>
         <div style={{ textAlign:"center", marginTop:20, fontSize:13, color:"var(--muted,#67788D)" }}>
-          Already registered? <Link to="/" style={{ color:"var(--teal,#18664A)", fontWeight:600, textDecoration:"none" }}>Sign in</Link>
+          Already registered? <Link to="/signin" style={{ color:"var(--teal,#18664A)", fontWeight:600, textDecoration:"none" }}>Sign in</Link>
         </div>
       </form>
     </AuthShell>
@@ -697,7 +700,7 @@ export function ForgotPassword() {
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:36, marginBottom:16 }}>📬</div>
         <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.7, marginBottom:24 }}>We sent a reset link to <strong style={{ color:"var(--navy,#0B1D33)" }}>{email}</strong>. Check your inbox.</p>
-        <button onClick={()=>navigate("/")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Back to login</button>
+        <button onClick={()=>navigate("/signin")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Back to login</button>
       </div>
     </AuthShell>
   );
@@ -708,7 +711,7 @@ export function ForgotPassword() {
         <FormInput label="Work email" type="email" placeholder="you@company.com" value={email} onChange={e=>setEmail(e.target.value)}/>
         <SubmitBtn loading={loading}>Send reset link →</SubmitBtn>
         <div style={{ textAlign:"center", marginTop:16, fontSize:13, color:"var(--muted,#67788D)" }}>
-          <Link to="/" style={{ color:"var(--teal,#18664A)", fontWeight:600, textDecoration:"none" }}>← Back to login</Link>
+          <Link to="/signin" style={{ color:"var(--teal,#18664A)", fontWeight:600, textDecoration:"none" }}>← Back to login</Link>
         </div>
       </form>
     </AuthShell>
@@ -756,7 +759,7 @@ export function ResetPassword() {
       <div style={{ textAlign:"center" }}>
         <div style={{ fontSize:36, marginBottom:16 }}>✓</div>
         <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.7, marginBottom:24 }}>Your password has been changed. You can now sign in with the new password.</p>
-        <button onClick={()=>navigate("/")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Go to login</button>
+        <button onClick={()=>navigate("/signin")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>Go to login</button>
       </div>
     </AuthShell>
   );
@@ -791,18 +794,18 @@ export function VerifyEmail() {
   }, []);
 
   const map = {
-    verifying: { icon:"⏳", title:"Verifying your email…",   body:"Just a moment.",                                              btn:null },
-    success:   { icon:"✅", title:"Email verified!",          body:"Your account is active. You can now sign in.",              btn:"Go to login" },
-    error:     { icon:"❌", title:"Link expired or invalid",  body:"Please request a new verification email.",                  btn:"Back to login" },
+    verifying: { icon:"mail", title:"Verifying your email…",   body:"Just a moment.",                                              btn:null },
+    success:   { icon:"check", title:"Email verified!",          body:"Your account is active. You can now sign in.",              btn:"Go to login" },
+    error:     { icon:"warning", title:"Link expired or invalid",  body:"Please request a new verification email.",                  btn:"Back to login" },
   };
   const s = map[status];
 
   return (
     <AuthShell title={s.title}>
       <div style={{ textAlign:"center" }}>
-        <div style={{ fontSize:40, marginBottom:16 }}>{s.icon}</div>
+        <div style={{ color:"var(--teal,#18664A)", marginBottom:16, display:"flex", justifyContent:"center" }}><SectorIcon iconKey={s.icon} size={40}/></div>
         <p style={{ fontSize:14, color:"var(--muted,#67788D)", lineHeight:1.7, marginBottom:s.btn?24:0 }}>{s.body}</p>
-        {s.btn && <button onClick={()=>navigate("/")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>{s.btn}</button>}
+        {s.btn && <button onClick={()=>navigate("/signin")} style={{ background:"var(--navy,#0B1D33)", color:"var(--cream,#F2EBD9)", border:"none", borderRadius:6, padding:"11px 24px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>{s.btn}</button>}
       </div>
     </AuthShell>
   );

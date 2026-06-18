@@ -1,6 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import ThemePicker from "./ThemePicker";
 import Chatbot from "./Chatbot";
 import { useState } from "react";
 
@@ -46,6 +45,7 @@ export default function Layout({ children }) {
   const navigate  = useNavigate();
   const location  = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [marketSearch, setMarketSearch] = useState("");
 
   const role  = user?.role || "vendor";
   const items = NAV_ITEMS[role] || NAV_ITEMS.vendor;
@@ -59,7 +59,7 @@ export default function Layout({ children }) {
   const sideW = collapsed ? 64 : 240;
 
   return (
-    <div style={{ display:"flex", minHeight:"100vh", background:"var(--bg)" }}>
+    <div className="commerce-shell" style={{ display:"flex", minHeight:"100vh", background:"var(--bg)" }}>
 
       {/* ── Sidebar ─────────────────────────────────────────── */}
       <aside style={{
@@ -81,7 +81,7 @@ export default function Layout({ children }) {
           <div style={{ display:"flex", alignItems:"center", gap:10, overflow:"hidden" }}>
             <div style={{
               width:30, height:30, borderRadius:7, flexShrink:0,
-              background:"var(--sidebar-accent, var(--teal))",
+              background:"linear-gradient(135deg,#7C3AED,#A855F7)",
               display:"flex", alignItems:"center", justifyContent:"center",
             }}>
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -90,8 +90,8 @@ export default function Layout({ children }) {
             </div>
             {!collapsed && (
               <div style={{ overflow:"hidden" }}>
-                <div style={{ fontFamily:"'Playfair Display',serif", fontWeight:700, fontSize:13, color:"var(--cream, white)", whiteSpace:"nowrap", lineHeight:1.2 }}>Even Procurement</div>
-                <div style={{ fontSize:10, color:"var(--sidebar-text)", marginTop:2, letterSpacing:"0.07em", textTransform:"uppercase", whiteSpace:"nowrap" }}>{role} portal</div>
+                <div style={{ fontWeight:900, fontSize:14, color:"var(--navy,#24122F)", whiteSpace:"nowrap", lineHeight:1.2 }}>Even Marketplace</div>
+                <div style={{ fontSize:10, color:"var(--sidebar-text)", marginTop:2, letterSpacing:"0.06em", textTransform:"uppercase", whiteSpace:"nowrap" }}>{role} workspace</div>
               </div>
             )}
           </div>
@@ -181,19 +181,24 @@ export default function Layout({ children }) {
 
         {/* Topbar */}
         <header style={{
-          height:58, background:"var(--surface)",
+          minHeight:70, background:"var(--surface)",
           borderBottom:"1px solid var(--border)",
           display:"flex", alignItems:"center", justifyContent:"space-between",
-          padding:"0 28px", position:"sticky", top:0, zIndex:40,
+          padding:"10px 28px", position:"sticky", top:0, zIndex:40,
           boxShadow:"var(--shadow-sm)",
         }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <span className="eyebrow eyebrow-muted" style={{ marginBottom:0 }}>
-              {new Date().toLocaleDateString("en-IN",{ weekday:"long", month:"long", day:"numeric" })}
-            </span>
+          <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0 }}>
+            {role==="buyer" ? <form onSubmit={e=>{e.preventDefault();const q=marketSearch.trim();if(q)sessionStorage.setItem("buyerProcurementQuery",q);navigate("/dashboard/vendors");}} style={{display:"flex",alignItems:"center",background:"#F3F4F6",border:"1px solid #E5E7EB",borderRadius:12,padding:"0 12px",width:"min(620px,70vw)",height:44}}>
+              <span style={{color:"#6B7280",display:"flex"}}>{ICONS.search}</span>
+              <input value={marketSearch} onChange={e=>setMarketSearch(e.target.value)} placeholder="Search services, suppliers or locations" style={{flex:1,border:"none",outline:"none",background:"transparent",padding:"0 10px",fontSize:14,color:"#24122F"}}/>
+              <button type="submit" style={{border:"none",background:"#0C831F",color:"white",borderRadius:8,padding:"7px 12px",fontWeight:800,cursor:"pointer"}}>Search</button>
+            </form> : <div>
+              <div style={{fontSize:15,fontWeight:900,color:"var(--navy,#24122F)"}}>{role==="vendor"?"Grow your storefront":"Marketplace operations"}</div>
+              <div style={{fontSize:11,color:"var(--muted,#6B7280)",marginTop:2}}>{new Date().toLocaleDateString("en-IN",{ weekday:"long", month:"short", day:"numeric" })}</div>
+            </div>}
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <ThemePicker/>
+            {role==="buyer" && <button onClick={()=>navigate("/dashboard/requests")} style={{border:"1px solid #E5E7EB",background:"white",borderRadius:10,padding:"9px 12px",fontSize:12,fontWeight:800,color:"#24122F",cursor:"pointer"}}>My requests</button>}
             <div style={{
               width:32, height:32, borderRadius:"50%",
               background:"var(--teal-bg, rgba(24,102,74,0.1))",
@@ -205,7 +210,7 @@ export default function Layout({ children }) {
         </header>
 
         {/* Page */}
-        <main style={{ flex:1, padding:"32px 36px", overflowY:"auto", animation:"fadeIn 0.3s ease" }}>
+        <main style={{ flex:1, padding:"24px 28px 40px", overflowY:"auto", animation:"fadeIn 0.3s ease", maxWidth:1600, width:"100%", margin:"0 auto" }}>
           {children}
         </main>
       </div>

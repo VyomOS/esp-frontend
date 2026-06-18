@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Layout from "../components/Layout";
-import { buyerAPI, vendorAPI, chatAPI, notificationAPI } from "../api/api";
+import { buyerAPI, vendorAPI, chatAPI, notificationAPI, resolveMediaUrl } from "../api/api";
 import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
@@ -14,11 +14,11 @@ const SERVICE_CATEGORIES = [
   "Green & Sustainability","Handicrafts & Artisan","Healthcare & Wellness","Construction & Fitout",
 ];
 const PROCUREMENT_INDUSTRIES = [
-  { label:"Hospitals & Healthcare", category:"Healthcare & Wellness", count:"Hospitals, diagnostics, PPE, wellness", iconKey:"healthcare", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
-  { label:"Automotive", category:"Logistics & Delivery", count:"Fleet, EV, drivers", iconKey:"automotive", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
-  { label:"ITES", category:"IT & Digital Services", count:"Tech, support, BPO", iconKey:"technology", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
-  { label:"Gifting", category:"Handicrafts & Artisan", count:"Hampers, merchandise", iconKey:"gifting", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
-  { label:"Food", category:"Food & Catering", count:"Meals, pantry, catering", iconKey:"food", terms:["food","catering","snacks","meals","canteen","beverage","lunch","kitchen"] },
+  { label:"Hospitals & Healthcare", category:"Healthcare & Wellness", count:"Hospitals, diagnostics, PPE, wellness", iconKey:"healthcare", bg:"#E8F1FF", color:"#2563EB", terms:["medical","clinic","hospital","health","wellness","diagnostic","ppe","nurse","pharma"] },
+  { label:"Automotive", category:"Logistics & Delivery", count:"Fleet, EV, drivers", iconKey:"automotive", bg:"#FFF0E6", color:"#EA580C", terms:["vehicle","fleet","auto","automotive","driver","spare","parts","ev","delivery"] },
+  { label:"ITES", category:"IT & Digital Services", count:"Tech, support, BPO", iconKey:"technology", bg:"#F1EAFE", color:"#7C3AED", terms:["software","website","app","bpo","call center","data","tech","support","digital"] },
+  { label:"Gifting", category:"Handicrafts & Artisan", count:"Hampers, merchandise", iconKey:"gifting", bg:"#FCE7F3", color:"#DB2777", terms:["gift","gifting","hamper","merchandise","festival","corporate gift","souvenir"] },
+  { label:"Food", category:"Food & Catering", count:"Meals, pantry, catering", iconKey:"food", bg:"#ECFDF5", color:"#059669", terms:["food","catering","snacks","meals","canteen","beverage","lunch","kitchen"] },
 ];
 const QUICK_REQUIREMENTS = [
   { title:"Office meals & catering", meta:"Food vendors, canteen, packed meals", category:"Food & Catering", query:"office meals catering", tag:"Most requested" },
@@ -84,20 +84,24 @@ export default function BuyerDashboard() {
     : loc.pathname.includes("vendors")           ? "vendors"
     : "home";
 
+  useEffect(()=>{
+    if (tab === "home" && sessionStorage.getItem("espServiceIntent")) nav("/dashboard/requests");
+  }, [tab, nav]);
+
   return (
     <Layout>
       {/* Tab bar */}
       <div style={{ display:"flex", gap:0, borderBottom:"1.5px solid var(--border,#D4C9B5)", marginBottom:28, flexWrap:"wrap" }}>
         {[
-          { id:"home",     label:"Home",          icon:"⬡" },
-          { id:"requests", label:"My RFPs",        icon:"📋" },
-          { id:"vendors",  label:"Find Vendors",   icon:"🌱" },
+          { id:"home",     label:"Home",          icon:"home" },
+          { id:"requests", label:"My RFPs",        icon:"clipboard" },
+          { id:"vendors",  label:"Find Vendors",   icon:"search" },
         ].map(t=>{
           const active = t.id === tab;
           return (
             <button key={t.id} onClick={()=>nav(t.id==="home"?"/dashboard":`/dashboard/${t.id}`)}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 18px", background:"none", border:"none", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontWeight:600, fontSize:13, color:active?"var(--navy,#0B1D33)":"var(--text3,#67788D)", borderBottom:`2px solid ${active?"var(--teal,#18664A)":"transparent"}`, marginBottom:"-1.5px", transition:"all .16s" }}>
-              <span style={{ fontSize:14 }}>{t.icon}</span>{t.label}
+              <span style={{ display:"flex" }}><SectorIcon iconKey={t.icon} size={16}/></span>{t.label}
             </button>
           );
         })}
@@ -216,10 +220,12 @@ function BuyerHome({ toast, nav }) {
             const activeChip = activeIndustry === ind.label;
             return (
               <button key={ind.label} onClick={()=>{ setActiveIndustry(ind.label); setProcurementQuery(q => q || ind.label); startProcurementSearch(ind.label, ind); }}
-                style={{ background:activeChip?"#ECFDF5":"#fff", border:`1.5px solid ${activeChip?"#18664A":"#E2E8F0"}`, borderRadius:7, padding:"13px 12px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", textAlign:"left" }}>
-                <div style={{ width:36, height:36, borderRadius:8, background:activeChip?"#18664A":"#F1F5F9", color:activeChip?"#fff":"#18664A", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:10 }}><SectorIcon iconKey={ind.iconKey} size={22}/></div>
-                <div style={{ fontSize:13, fontWeight:800, color:"#0F172A" }}>{ind.label}</div>
-                <div style={{ fontSize:11, color:"#64748B", marginTop:3, lineHeight:1.35 }}>{ind.count}</div>
+                style={{ background:activeChip?ind.bg:"#fff", border:`1.5px solid ${activeChip?ind.color:"#E2E8F0"}`, borderRadius:12, padding:"14px 12px", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", textAlign:"center", minHeight:150, boxShadow:"0 3px 12px rgba(15,23,42,.05)", transition:"transform .16s, box-shadow .16s" }}
+                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 8px 20px rgba(15,23,42,.10)";}}
+                onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="0 3px 12px rgba(15,23,42,.05)";}}>
+                <div style={{ width:66, height:66, borderRadius:18, background:ind.bg, color:ind.color, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 11px", boxShadow:`inset 0 0 0 1px ${ind.color}20` }}><SectorIcon iconKey={ind.iconKey} size={38}/></div>
+                <div style={{ fontSize:13, fontWeight:800, color:"#0F172A", lineHeight:1.25 }}>{ind.label}</div>
+                <div style={{ fontSize:11, color:"#64748B", marginTop:4, lineHeight:1.35 }}>{ind.count}</div>
               </button>
             );
           })}
@@ -576,6 +582,22 @@ function BuyerRequests({ toast }) {
   const [confirmAward, setConfirmAward]   = useState(null); // {bidId, vendorName}
   const [awarding, setAwarding]           = useState(false);
 
+  useEffect(()=>{
+    try {
+      const intent = JSON.parse(sessionStorage.getItem("espServiceIntent") || "null");
+      if (!intent || intent.version !== 1 || Date.now() - intent.created_at > 24 * 60 * 60 * 1000) return;
+      setForm(previous=>({
+        ...previous,
+        title: intent.title || previous.title,
+        category: intent.category || previous.category,
+        description: `I would like a quote and availability details for ${intent.title}.`,
+        service_id: intent.service_id,
+        target_vendor_id: intent.vendor_id,
+      }));
+      setCreating(true);
+    } catch { sessionStorage.removeItem("espServiceIntent"); }
+  }, []);
+
   const load = () => buyerAPI.getMyRequests().then(r=>setRequests(r.data)).finally(()=>setLoading(false));
   useEffect(()=>{ load(); },[]);
 
@@ -584,6 +606,7 @@ function BuyerRequests({ toast }) {
     setSaving(true);
     try {
       await buyerAPI.createRequest({ ...form, min_esg_score: Number(form.min_esg_score)||0 });
+      sessionStorage.removeItem("espServiceIntent");
       toast.success("RFP posted!");
       setCreating(false);
       setForm({ title:"", description:"", category:"", location:"", budget:"", deadline:"", impact_requirements:"", min_esg_score:"" });
@@ -1037,13 +1060,15 @@ function BuyerVendors({ toast }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [showDetailContact, setShowDetailContact] = useState(false);
   const [aiMatch, setAiMatch]     = useState({}); // vendor_id -> match reason
+  const [loadError, setLoadError] = useState("");
 
   const load = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const r = await vendorAPI.getRanked();
       setVendors(r.data);
-    } catch { toast.error("Failed to load vendors"); }
+    } catch { setLoadError("Supplier data could not be loaded. Please retry."); toast.error("Failed to load vendors"); }
     finally { setLoading(false); }
   };
 
@@ -1059,6 +1084,7 @@ function BuyerVendors({ toast }) {
 
   const search_vendors = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const r = await vendorAPI.listVendors({
         search: category ? "" : search,
@@ -1067,7 +1093,7 @@ function BuyerVendors({ toast }) {
         certification: cert
       });
       setVendors(r.data);
-    } catch { toast.error("Search failed"); }
+    } catch { setLoadError("Supplier search is temporarily unavailable. Please retry."); toast.error("Search failed"); }
     finally { setLoading(false); }
   };
 
@@ -1138,6 +1164,8 @@ function BuyerVendors({ toast }) {
 
       {loading
         ? <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:14 }}>{[...Array(6)].map((_,i)=><div key={i} className="skeleton" style={{height:160,borderRadius:12}}/>)}</div>
+        : loadError
+        ? <Empty icon="ERR" title="Suppliers could not be loaded" desc={loadError} action={<button onClick={load} style={{background:"#18664A",color:"white",border:"none",borderRadius:6,padding:"10px 16px",fontWeight:800,cursor:"pointer"}}>Retry</button>}/>
         : filtered.length === 0
         ? (
           <Empty
@@ -1242,6 +1270,8 @@ function VendorDetailModal({ open, onClose, detail, loading, vendorName, showCon
                 {detail.profile.description}
               </div>
             )}
+
+            {detail.profile?.services?.length > 0 && <div><SectionHead>Services and current offers</SectionHead><div className="buyer-service-strip">{detail.profile.services.map(service=><div className="buyer-service-tile" key={service.id}><div>{service.image_url?<img src={resolveMediaUrl(service.image_url)} alt={service.title}/>:<span>Photo pending</span>}</div><strong>{service.title}</strong><small>{service.offer_is_live&&service.offer_price!=null?`${service.currency} ${service.offer_price}`:service.base_price!=null?`${service.currency} ${service.base_price}`:service.price_range||"Request a quote"}{service.unit?` / ${service.unit}`:""}</small>{service.offer_is_live&&<b>Current offer</b>}</div>)}</div></div>}
 
             {/* ── Business overview ── */}
             {(() => {
