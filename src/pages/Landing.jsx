@@ -1,163 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SectorIcon from "../components/SectorIcon";
-import { marketplaceAPI, resolveMediaUrl } from "../api/api";
+import MarketplaceHeader, { MarketplaceLogo } from "../components/MarketplaceHeader";
+import MarketplaceServiceCard, { servicePrice } from "../components/MarketplaceServiceCard";
+import { buyerAPI, marketplaceAPI, resolveMediaUrl } from "../api/api";
+import { useAuth } from "../context/AuthContext";
 
 const CATEGORIES = [
-  { label:"All services", key:"all", icon:"technology", tone:"violet" },
-  { label:"Logistics", key:"Logistics & Delivery", icon:"automotive", tone:"orange" },
-  { label:"Food & catering", key:"Food & Catering", icon:"food", tone:"green" },
-  { label:"Corporate gifts", key:"Handicrafts & Artisan", icon:"gifting", tone:"pink" },
-  { label:"Healthcare", key:"Healthcare & Wellness", icon:"healthcare", tone:"blue" },
-  { label:"IT services", key:"IT & Digital Services", icon:"technology", tone:"violet" },
+  { label: "All services", key: "", icon: "technology", tone: "violet" },
+  { label: "Logistics", key: "Logistics & Delivery", icon: "automotive", tone: "orange" },
+  { label: "Food & catering", key: "Food & Catering", icon: "food", tone: "green" },
+  { label: "Corporate gifts", key: "Handicrafts & Artisan", icon: "gifting", tone: "pink" },
+  { label: "Healthcare", key: "Healthcare & Wellness", icon: "healthcare", tone: "blue" },
+  { label: "IT services", key: "IT & Digital Services", icon: "technology", tone: "violet" },
 ];
-
-const categoryStyle = (name="") => {
-  const match = CATEGORIES.find(item=>item.key===name);
-  return match || { icon:"generic", tone:"violet" };
-};
-
-const money = (value, currency="INR") => value == null ? "" : new Intl.NumberFormat("en-IN", { style:"currency", currency, maximumFractionDigits:value % 1 ? 2 : 0 }).format(value);
-const servicePrice = service => service.offer_active
-  ? { current:money(service.offer_price, service.currency), original:money(service.base_price, service.currency), label:`${service.discount_percent}% off` }
-  : service.base_price != null
-    ? { current:money(service.base_price, service.currency), original:"", label:service.pricing_type === "starting_at" ? "Starting at" : "Vendor price" }
-    : { current:service.price_range || "Request a quote", original:"", label:service.price_range ? "Vendor rate" : "Pricing" };
-
-function Logo() {
-  return <div className="market-logo" aria-label="Even Procurement">
-    <span className="market-logo-mark"><span>e</span></span>
-    <span><strong>even</strong><small>PROCUREMENT</small></span>
-  </div>;
-}
+const RECOMMENDED = ["Corporate gifts", "Office catering", "Last-mile delivery", "Workplace healthcare"];
 
 export default function Landing() {
-  const navigate = useNavigate();
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [services, setServices] = useState([]);
-  const [offers, setOffers] = useState([]);
-  const [offerIndex, setOfferIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-
-  const loadServices = () => {
-    setLoading(true); setLoadError(false);
-    Promise.all([marketplaceAPI.listServices({ page_size:24, sort:"demand" }), marketplaceAPI.listServices({ page_size:8, sort:"offers" })])
-      .then(([catalogue, featured])=>{ setServices(catalogue.data?.items || []); setOffers((featured.data?.items || []).filter(item=>item.offer_active)); })
-      .catch(()=>setLoadError(true))
-      .finally(()=>setLoading(false));
-  };
+  const navigate = useNavigate(); const { user } = useAuth();
+  const [services, setServices] = useState([]); const [offers, setOffers] = useState([]); const [offerIndex, setOfferIndex] = useState(0); const [loading, setLoading] = useState(true); const [loadError, setLoadError] = useState(false);
+  const [query, setQuery] = useState(""); const [suggestions, setSuggestions] = useState([]); const [searchOpen, setSearchOpen] = useState(false); const [suggestionLoading, setSuggestionLoading] = useState(false); const [activeSuggestion, setActiveSuggestion] = useState(-1); const [saved, setSaved] = useState(new Set());
+  const loadServices = () => { setLoading(true); setLoadError(false); Promise.all([marketplaceAPI.listServices({ page_size: 12, sort: "demand" }), marketplaceAPI.listServices({ page_size: 8, sort: "offers" })]).then(([catalogue, featured]) => { setServices(catalogue.data?.items || []); setOffers((featured.data?.items || []).filter(item => item.offer_active)); }).catch(() => setLoadError(true)).finally(() => setLoading(false)); };
   useEffect(loadServices, []);
-  useEffect(()=>{ if(offers.length<2)return; const timer=setInterval(()=>setOfferIndex(index=>(index+1)%offers.length),5000); return()=>clearInterval(timer); },[offers.length]);
+  useEffect(() => { if (user?.role === "buyer") buyerAPI.saved().then(r => setSaved(new Set(r.data.filter(item => item.target_type === "service").map(item => item.target_id)))).catch(() => {}); }, [user]);
+  useEffect(() => { if (offers.length < 2) return; const timer = setInterval(() => setOfferIndex(index => (index + 1) % offers.length), 5000); return () => clearInterval(timer); }, [offers.length]);
+  useEffect(() => { if (query.trim().length < 2) { setSuggestions([]); setSuggestionLoading(false); return; } setSuggestionLoading(true); const timer = setTimeout(() => marketplaceAPI.suggestions(query.trim()).then(r => setSuggestions(r.data?.items || [])).catch(() => setSuggestions([])).finally(() => setSuggestionLoading(false)), 180); return () => clearTimeout(timer); }, [query]);
   const featured = offers[offerIndex] || services[0];
-
-  const visible = useMemo(() => services.filter(service => {
-    const matchesCategory = category === "all" || service.category === category;
-    const haystack = `${service.title} ${service.vendor?.organization_name || ""} ${service.category}`.toLowerCase();
-    return matchesCategory && haystack.includes(query.trim().toLowerCase());
-  }), [category, query, services]);
-
-  const openService = (service) => {
-    const intent = { version:1, service_id:service.id, vendor_id:service.vendor?.id, title:service.title, category:service.category, created_at:Date.now() };
-    sessionStorage.setItem("espServiceIntent", JSON.stringify(intent));
-    sessionStorage.setItem("buyerProcurementQuery", service.title);
-    sessionStorage.setItem("buyerProcurementCategory", service.category || "");
-    if (localStorage.getItem("token")) navigate("/dashboard/vendors");
-    else navigate(`/register?role=buyer&service=${service.id}`);
-  };
-
-  const submitSearch = (event) => {
-    event.preventDefault();
-    const clean = query.trim();
-    if (!clean) return;
-    sessionStorage.setItem("buyerProcurementQuery", clean);
-    if (category !== "all") sessionStorage.setItem("buyerProcurementCategory", category);
-    if (localStorage.getItem("token")) navigate("/dashboard/vendors");
-    else navigate(`/register?role=buyer&service=${encodeURIComponent(clean)}`);
-  };
-
-  return <div className="market-page">
-    <header className="market-header">
-      <div className="market-header-inner">
-        <button className="logo-button" onClick={()=>navigate("/")}><Logo/></button>
-        <nav className="market-nav" aria-label="Primary navigation">
-          <a href="#services">Services</a>
-          <a href="#demand">In demand</a>
-          <button onClick={()=>navigate("/register?role=buyer")}>For buyers</button>
-        </nav>
-        <div className="market-actions">
-          <button className="sign-in-link" onClick={()=>navigate("/signin")}>Sign in</button>
-          <button className="vendor-cta" onClick={()=>navigate("/register?role=vendor")}>Register as a vendor <span>↗</span></button>
-        </div>
-      </div>
-    </header>
-
-    <main>
-      <section className="market-hero">
-        <div className="hero-copy">
-          <div className="hero-kicker"><span/>India's responsible services marketplace</div>
-          <h1>Business services,<br/><em>ready when you are.</em></h1>
-          <p>Compare prices, choose verified vendors and start a conversation in minutes. Every supplier is ESG-scored and ready for business.</p>
-          <form className="hero-search" onSubmit={submitSearch}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-            <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="What service does your business need?" aria-label="Search services"/>
-            <button type="submit">Find services</button>
-          </form>
-          <div className="hero-trust"><span>✓ Browse before signing up</span><span>✓ Vendor-published rates</span><span>✓ ESG context where available</span></div>
-        </div>
-        <div className="hero-art" aria-label="Service marketplace preview">
-          <div className="hero-orbit orbit-one"/><div className="hero-orbit orbit-two"/>
-          {featured ? <div className="hero-card hero-card-main" key={featured.id}>
-            <div className="mini-tag">{featured.offer_active ? `${featured.discount_percent}% OFF NOW` : featured.demand_count_30d ? "IN DEMAND" : "JUST ADDED"}</div>
-            <div className={`service-visual tone-${categoryStyle(featured.category).tone}`}>{featured.image_url ? <img src={resolveMediaUrl(featured.image_url)} alt=""/> : <div className="photo-pending">Photo coming soon</div>}</div>
-            <div><small>{featured.category || "BUSINESS SERVICE"}</small><strong>{featured.title}</strong><span>{servicePrice(featured).current}{featured.unit ? ` · ${featured.unit}` : ""}</span></div>
-            <button onClick={()=>openService(featured)}>Request service</button>
-          </div> : <div className="hero-card hero-card-main"><div className="service-visual tone-violet"><SectorIcon iconKey="technology" size={56}/></div><div><small>SERVICE MARKETPLACE</small><strong>{loading ? "Loading services…" : "Tell us what you need"}</strong><span>Connect with a relevant vendor</span></div></div>}
-          <div className="floating-pill pill-one"><span className="pulse"/> Public service discovery</div>
-          <div className="hero-stamp">ETHICAL<br/><b>SOURCING</b></div>
-        </div>
-      </section>
-
-      <section className="category-section" aria-label="Service categories">
-        <div className="category-row">
-          {CATEGORIES.map(item => <button key={item.key} className={category===item.key?"active":""} onClick={()=>setCategory(item.key)}>
-            <span className={`category-icon tone-${item.tone}`}><SectorIcon iconKey={item.icon} size={30}/></span>
-            <span>{item.label}</span>
-          </button>)}
-        </div>
-      </section>
-
-      <section className="services-section" id="services">
-        <div className="section-heading"><div><span className="eyebrow-commerce">SERVICES FOR YOUR BUSINESS</span><h2>Explore the marketplace</h2><p>Service details and rates are published by vendors.</p></div><button onClick={()=>{setCategory("all");setQuery("")}}>View all services <span>→</span></button></div>
-        <div className="service-grid">
-          {loading && [...Array(6)].map((_,i)=><div className="service-card skeleton" style={{height:430}} key={i}/>)}
-          {!loading && visible.map(service => { const style=categoryStyle(service.category); const verified=service.vendor?.verification_status==="verified"; const price=servicePrice(service); return <article className="service-card" key={service.id}>
-            <div className={`service-card-art tone-${style.tone}`}>
-              {service.offer_active ? <span className="service-badge offer-badge">{service.discount_percent}% off</span> : verified && <span className="service-badge">Verified vendor</span>}
-              {service.image_url ? <img src={resolveMediaUrl(service.image_url)} alt={`${service.title} by ${service.vendor?.organization_name || "vendor"}`} loading="lazy"/> : <div className="photo-pending">Vendor photo pending</div>}
-            </div>
-            <div className="service-card-body">
-              <span className="service-category">{service.category}</span>
-              <h3>{service.title}</h3>
-              <p className="service-description">{service.description}</p>
-              <div className="vendor-line"><span className="vendor-avatar">{service.vendor?.organization_name?.[0] || "V"}</span><span>{service.vendor?.organization_name || "Service provider"}</span>{verified && <b>✓</b>}</div>
-              {(service.vendor?.total_reviews>0 || service.vendor?.location) && <div className="rating-line">{service.vendor?.total_reviews>0 && <span>★ {service.vendor.average_rating} · {service.vendor.total_reviews} reviews</span>}{service.vendor?.location && <span>{service.vendor.location}</span>}</div>}
-              <div className="price-row"><div><small>{price.label}</small><strong>{price.current}</strong>{service.unit && <span>per {service.unit}</span>}{price.original && <del>{price.original}</del>}</div><button onClick={()=>openService(service)}>Request service</button></div>
-            </div>
-          </article>})}
-        </div>
-        {!loading && loadError && <div className="market-empty"><strong>Services could not be loaded</strong><p>The marketplace connection may be waking up. Please try again.</p><button onClick={loadServices}>Retry</button></div>}
-        {!loading && !loadError && visible.length===0 && <div className="market-empty"><strong>No exact match yet</strong><p>Try another service or browse all categories.</p><button onClick={()=>{setQuery("");setCategory("all")}}>Reset search</button></div>}
-      </section>
-
-      <section className="demand-section" id="demand"><div className="demand-intro"><span className="eyebrow-commerce light">BUILT FOR PROCUREMENT</span><h2>From discovery to a clear requirement</h2><p>Browse service catalogues publicly, then create a buyer account only when you are ready to contact a vendor.</p></div><div className="demand-list">{[{label:"Browse services",sub:"No account required",icon:"search",tone:"green"},{label:"Compare vendor context",sub:"Rates, location and trust signals",icon:"check",tone:"blue"},{label:"Send your requirement",sub:"Continue through the existing RFP workflow",icon:"clipboard",tone:"orange"}].map((item,i)=><div className="demand-flow" key={item.label}><span className={`demand-number tone-${item.tone}`}>0{i+1}</span><span className={`demand-icon tone-${item.tone}`}><SectorIcon iconKey={item.icon} size={34}/></span><span className="demand-name">{item.label}<small>{item.sub}</small></span></div>)}</div></section>
-
-      <section className="vendor-banner">
-        <div><span>FOR SERVICE PROVIDERS</span><h2>Good work deserves<br/>better business.</h2><p>Join verified vendors already receiving requirements from serious corporate buyers.</p><button onClick={()=>navigate("/register?role=vendor")}>Build your vendor storefront <span>→</span></button></div>
-        <div className="vendor-metrics"><div><strong>01</strong><span>create your profile</span></div><div><strong>02</strong><span>publish services</span></div><div><strong>03</strong><span>respond to buyers</span></div></div>
-      </section>
-    </main>
-    <footer className="market-footer"><Logo/><span>Responsible procurement, made practical.</span><span>© 2026 Even Procurement</span></footer>
-  </div>;
+  const choices = query.trim().length < 2 ? RECOMMENDED.map(label => ({ label, subtitle: "Explore verified providers", type: "recommended", query: label })) : suggestions;
+  const find = (event, value = query) => { event?.preventDefault(); const clean = value.trim(); setSearchOpen(false); setActiveSuggestion(-1); navigate(clean ? `/search?q=${encodeURIComponent(clean)}` : "/search"); };
+  const searchKeyDown = event => { if (event.key === "Escape") { setSearchOpen(false); setActiveSuggestion(-1); return; } if (!searchOpen || !choices.length) return; if (event.key === "ArrowDown") { event.preventDefault(); setActiveSuggestion(value => (value + 1) % choices.length); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveSuggestion(value => value <= 0 ? choices.length - 1 : value - 1); } else if (event.key === "Enter" && activeSuggestion >= 0) { event.preventDefault(); find(null, choices[activeSuggestion].query); } };
+  useEffect(() => { const onKeyDown = event => { if (document.activeElement?.getAttribute("aria-label") === "Search services") searchKeyDown(event); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [searchOpen, activeSuggestion, query, suggestions]);
+  useEffect(() => { document.querySelectorAll(".hero-suggestions button").forEach((button, index) => button.classList.toggle("active", index === activeSuggestion)); }, [activeSuggestion, searchOpen, choices.length]);
+  return <div className="market-page"><MarketplaceHeader /><main>
+    <section className="market-hero"><div className="hero-copy"><div className="hero-kicker"><span />India&apos;s responsible services marketplace</div><h1>Business services,<br /><em>ready when you are.</em></h1><p>Discover verified vendors, compare vendor-published rates and send a requirement—all from one marketplace.</p><div className="hero-search-wrap"><form className="hero-search" onSubmit={find}><span className="search-glyph">⌕</span><input value={query} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 120)} onChange={e => setQuery(e.target.value)} placeholder="What service does your business need?" aria-label="Search services" /><button type="submit">Find services</button></form>{searchOpen && <div className="hero-suggestions">{suggestionLoading ? <div className="suggestion-status"><i className="button-spinner dark" /> Finding services…</div> : query.trim().length < 2 ? <><div className="suggestion-label">Recommended searches</div>{RECOMMENDED.map(item => <button key={item} onMouseDown={() => find(null, item)}><span><b>{item}</b><small>Explore verified providers</small></span><em>recommended</em></button>)}</> : suggestions.length ? suggestions.map((item, index) => <button key={`${item.type}-${item.id}-${index}`} onMouseDown={() => find(null, item.query)}><span><b>{item.label}</b><small>{item.subtitle}</small></span><em>{item.type}</em></button>) : <div className="suggestion-status">No direct suggestion. Press Enter to search all services.</div>}</div>}</div><div className="hero-trust"><span>✓ Browse freely</span><span>✓ Verified providers</span><span>✓ Buyer account tools</span></div></div>
+      <div className="hero-art"><div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />{featured ? <div className="hero-card hero-card-main"><div className="mini-tag">{featured.offer_active ? `${featured.discount_percent}% OFF NOW` : "FEATURED SERVICE"}</div><div className="service-visual">{featured.image_url ? <img src={resolveMediaUrl(featured.image_url)} alt={`${featured.title} catalogue`} /> : <div className="catalogue-placeholder"><span>e</span><b>Image being prepared</b></div>}</div><div className="hero-service-meta"><small>{featured.category}</small><strong>{featured.title}</strong><span className="hero-service-price">{servicePrice(featured).current}{featured.unit && <em> · {featured.unit}</em>}</span></div><button onClick={() => navigate(`/services/${featured.id}`)}>View service</button></div> : <div className="hero-card hero-card-main"><strong>{loading ? "Loading services…" : "Tell us what you need"}</strong></div>}<div className="floating-pill pill-one"><span className="pulse" /> Public service discovery</div></div></section>
+    <section className="category-section"><div className="category-row">{CATEGORIES.map(item => <button key={item.label} onClick={() => navigate(item.key ? `/search?category=${encodeURIComponent(item.key)}` : "/search")}><span className={`category-icon tone-${item.tone}`}><SectorIcon iconKey={item.icon} size={30} /></span><span>{item.label}</span></button>)}</div></section>
+    <section className="services-section"><div className="section-heading"><div><span className="eyebrow-commerce">SERVICES FOR YOUR BUSINESS</span><h2>{user?.role === "buyer" ? `Welcome back, ${user.name?.split(" ")[0]}` : "Explore the marketplace"}</h2><p>Fresh services and vendor-published offers selected for discovery.</p></div><button onClick={() => navigate("/search")}>View all services →</button></div><div className="service-grid">{loading && [...Array(6)].map((_, i) => <div className="service-card skeleton" style={{ height: 430 }} key={i} />)}{!loading && services.map(service => <MarketplaceServiceCard service={service} key={service.id} saved={saved.has(service.id)} onSaved={value => setSaved(current => { const next = new Set(current); value ? next.add(service.id) : next.delete(service.id); return next; })} />)}</div>{!loading && loadError && <div className="market-empty"><strong>Services could not be loaded</strong><button onClick={loadServices}>Retry</button></div>}</section>
+    <section className="demand-section"><div className="demand-intro"><span className="eyebrow-commerce light">BUILT FOR PROCUREMENT</span><h2>Discovery that leads somewhere.</h2><p>Move from browsing to a structured RFP, compare quotes and continue the conversation with the matched vendor.</p></div><div className="demand-list">{[["01", "Browse services", "No account required", "search", "green"], ["02", "Create a requirement", "Save addresses and procurement details", "clipboard", "blue"], ["03", "Compare and message", "Review quotes and talk safely", "check", "orange"]].map(item => <div className="demand-flow" key={item[0]}><span className="demand-number">{item[0]}</span><span className={`demand-icon tone-${item[4]}`}><SectorIcon iconKey={item[3]} size={32} /></span><span className="demand-name">{item[1]}<small>{item[2]}</small></span></div>)}</div></section>
+    <section className="vendor-banner"><div><span>FOR SERVICE PROVIDERS</span><h2>Good work deserves<br />better business.</h2><p>Get help creating your profile, calculating ESG readiness and publishing a compelling service catalogue.</p><button onClick={() => navigate("/vendor/register")}>Build your vendor storefront →</button></div></section>
+  </main><footer className="market-footer"><MarketplaceLogo /><span>Responsible procurement, made practical.</span><span>© 2026 Even Procurement</span></footer></div>;
 }

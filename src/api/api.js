@@ -1,7 +1,17 @@
 import axios from "axios";
 
-const BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const BASE = import.meta.env.DEV ? "http://127.0.0.1:8002" : (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000");
 export const resolveMediaUrl = value => !value ? "" : value.startsWith("/") ? `${BASE}${value}` : value;
+export const apiErrorMessage = (error, fallback = "Something went wrong") => {
+  const detail = error?.response?.data?.detail ?? error?.message;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail.map(item => typeof item === "string" ? item : item?.msg || item?.message).filter(Boolean);
+    if (messages.length) return [...new Set(messages)].join(". ");
+  }
+  if (detail && typeof detail === "object") return detail.message || detail.msg || fallback;
+  return fallback;
+};
 
 const API = axios.create({ baseURL: BASE });
 
@@ -29,18 +39,23 @@ API.interceptors.response.use(
 
 export const authAPI = {
   register: data => API.post("/auth/register", data),
+  registerBuyer: data => API.post("/auth/register/buyer", data),
   login: data => API.post("/auth/login", { email: data.email, password: data.password }),
   verifyEmail: token => API.get(`/auth/verify-email?token=${token}`), 
   resendVerification: email => API.post("/auth/resend-verification", { email }),
   forgotPassword: email => API.post("/auth/forgot-password", { email }),
   resetPassword: data => API.post("/auth/reset-password", data),
   changePassword: data => API.post("/auth/change-password", data),
+  deleteAccount: data => API.post("/auth/delete-account", data),
   me: () => API.get("/auth/me"),
 };
 
 export const marketplaceAPI = {
   listServices: params => API.get("/marketplace/services", { params }),
   getService: id => API.get(`/marketplace/services/${id}`),
+  suggestions: q => API.get("/marketplace/suggestions", { params: { q } }),
+  reviews: id => API.get(`/marketplace/services/${id}/reviews`),
+  similar: (id, limit = 4) => API.get(`/marketplace/services/${id}/similar`, { params: { limit } }),
 };
 
 export const vendorAPI = {
@@ -63,7 +78,12 @@ export const vendorAPI = {
   smartPrefill: data => API.post("/vendor/smart-prefill", data),
   addService: data => API.post("/vendor/services", data),
   updateService: (id, data) => API.patch(`/vendor/services/${id}`, data),
+  publishService: id => API.post(`/vendor/services/${id}/publish`),
+  unpublishService: id => API.post(`/vendor/services/${id}/unpublish`),
   getMyServices: () => API.get("/vendor/services/mine"),
+  createAssistanceLead: data => API.post("/vendor/assistance-leads", data),
+  getMyAssistanceLeads: () => API.get("/vendor/assistance-leads/mine"),
+  getMyVciCredentials: () => API.get("/vendor/vci/credentials/mine"),
   deleteService: id => API.delete(`/vendor/services/${id}`),
   uploadServiceImage: (id, file) => { const fd = new FormData(); fd.append("file", file); return API.post(`/vendor/services/${id}/image`, fd, { headers: { "Content-Type":"multipart/form-data" } }); },
   generateServiceImage: (id, direction="") => API.post(`/vendor/services/${id}/generate-image`, { direction }),
@@ -88,6 +108,19 @@ export const vendorAPI = {
 export const buyerAPI = {
   createProfile: data => API.post("/buyer/profile", data),
   getMyProfile: () => API.get("/buyer/profile/me"),
+  updateProfile: data => API.patch("/buyer/profile/me", data),
+  addresses: () => API.get("/buyer/addresses"),
+  locationSuggestions: (q = "", limit = 8) => API.get("/buyer/location-suggestions", { params: { q, limit } }),
+  addAddress: data => API.post("/buyer/addresses", data),
+  updateAddress: (id, data) => API.patch(`/buyer/addresses/${id}`, data),
+  defaultAddress: id => API.post(`/buyer/addresses/${id}/default`),
+  deleteAddress: id => API.delete(`/buyer/addresses/${id}`),
+  saved: () => API.get("/buyer/saved"),
+  save: data => API.post("/buyer/saved", data),
+  unsave: (type, id) => API.delete(`/buyer/saved/${type}/${id}`),
+  quotes: () => API.get("/buyer/quotes"),
+  reviewEligibility: id => API.get(`/buyer/services/${id}/review-eligibility`),
+  reviewService: (id, data) => API.post(`/buyer/services/${id}/reviews`, data),
   marketplacePopular: () => API.get("/buyer/marketplace/popular"),
   createRequest: data => API.post("/buyer/requests", data),
   getMyRequests: p => API.get("/buyer/requests/mine", { params: p }),
@@ -113,6 +146,18 @@ export const bidAPI = {
   withdraw: id => API.delete(`/bids/${id}`),
 };
 
+export const conversationAPI = {
+  list: () => API.get("/conversations"),
+  start: bidId => API.post(`/conversations/bids/${bidId}`),
+  detail: id => API.get(`/conversations/${id}`),
+  messages: id => API.get(`/conversations/${id}/messages`),
+  send: (id, body) => API.post(`/conversations/${id}/messages`, { body }),
+  read: id => API.post(`/conversations/${id}/read`),
+  block: id => API.post(`/conversations/${id}/block`),
+  unblock: id => API.delete(`/conversations/${id}/block`),
+  report: (id, data) => API.post(`/conversations/${id}/report`, data),
+};
+
 export const adminAPI = {
   listUsers: p => API.get("/admin/users", { params: p }),
   getUser: id => API.get(`/admin/users/${id}`),
@@ -122,6 +167,11 @@ export const adminAPI = {
   verifyVendor: id => API.post(`/admin/vendors/${id}/verify`),
   rejectVendor: (id, r) => API.post(`/admin/vendors/${id}/reject`, { reason: r }),
   unverifyVendor: id => API.post(`/admin/vendors/${id}/unverify`),
+  requestVendorChanges: (id, reason) => API.post(`/admin/vendors/${id}/request-changes`, { reason }),
+  restoreVendorReview: id => API.post(`/admin/vendors/${id}/restore`),
+  assistanceLeads: params => API.get("/admin/assistance-leads", { params }),
+  updateAssistanceLead: (id, data) => API.patch(`/admin/assistance-leads/${id}`, data),
+  issueVciCredential: (id, data) => API.post(`/admin/vendors/${id}/vci-credentials`, data),
   bulkVerify: data => API.post("/admin/vendors/bulk-verify", data),
   verifyGstin: id => API.post(`/admin/vendors/${id}/verify-gstin`),
   unverifyGstin: id => API.post(`/admin/vendors/${id}/unverify-gstin`),

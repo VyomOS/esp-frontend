@@ -61,10 +61,8 @@ export default function Chatbot() {
       setMessages(msgs);
       setChips(ROLE_CHIPS[role] || []);
 
-      if (shouldOpen) {
-        const t = setTimeout(() => setOpen(true), 1800);
-        return () => clearTimeout(t);
-      }
+      // Proactive messages remain available behind the unread indicator. The
+      // assistant never covers workspace actions unless the user opens it.
     });
   }, [role, user, hasGreeted]);
 

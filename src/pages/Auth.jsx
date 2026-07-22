@@ -157,6 +157,7 @@ const TICKER = [
 export function Login({ initialPhase="quiz" }) {
   const { login } = useAuth();
   const navigate  = useNavigate();
+  const [params]  = useSearchParams();
   const toast     = useToast();
 
   // phase: 'quiz' | 'signup' | 'login'
@@ -267,11 +268,14 @@ export function Login({ initialPhase="quiz" }) {
     setResendEmail("");
     setResendSent(false);
     try {
-      await login(lf.email, lf.password);
-      navigate("/dashboard");
+      const signedIn = await login(lf.email, lf.password);
+      const requested = params.get("returnTo") || sessionStorage.getItem("espReturnTo");
+      sessionStorage.removeItem("espReturnTo");
+      const safeReturn = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/";
+      navigate(signedIn.role === "buyer" ? safeReturn : "/dashboard", { replace:true });
     } catch (err) {
       const d = err.response?.data?.detail;
-      const msg = typeof d === "string" ? d : "Invalid credentials";
+      const msg = typeof d === "string" ? d : (err.message || "Invalid credentials");
       toast.error(msg);
       if (msg.toLowerCase().includes("verif")) {
         setResendEmail(lf.email);

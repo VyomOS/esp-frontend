@@ -2,12 +2,19 @@ import { createContext, useContext, useState, useCallback } from "react";
 
 const ToastContext = createContext(null);
 
+function readableMessage(value) {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(item => readableMessage(item?.msg || item?.message || item)).filter(Boolean).join(". ");
+  if (value && typeof value === "object") return readableMessage(value.message || value.msg || value.detail || "Something went wrong");
+  return "Something went wrong";
+}
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
   const add = useCallback((message, type="info") => {
     const id = Date.now();
-    setToasts(p => [...p, { id, message, type }]);
+    setToasts(p => [...p, { id, message: readableMessage(message), type }]);
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4000);
   }, []);
 

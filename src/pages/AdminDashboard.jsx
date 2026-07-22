@@ -5,6 +5,7 @@ import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
 import SectorIcon from "../components/SectorIcon";
+import AdminOperationsCenter from "../components/AdminOperationsCenter";
 import { useLocation, useNavigate } from "react-router-dom";
 
 /* ─────────────────────────────────── helpers ── */
@@ -67,7 +68,7 @@ function RejectVendorForm({ vendor, onReject, onClose }) {
 }
 
 /* ─────────────────────────────────── VENDOR APPROVAL CARD (module-level) ── */
-function VendorApprovalCard({ vendor, onVerify, onReject, toast }) {
+function VendorApprovalCard({ vendor, onVerify, onReject, onRequestChanges, toast }) {
   const [expanded, setExpanded]     = useState(false);
   const [docs, setDocs]             = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
@@ -133,6 +134,7 @@ function VendorApprovalCard({ vendor, onVerify, onReject, toast }) {
           <div style={{ flex:1 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6, flexWrap:"wrap" }}>
               <span style={{ fontFamily:"'Playfair Display',serif", fontSize:17, fontWeight:700, color:"var(--navy,#0B1D33)" }}>{vendor.organization_name}</span>
+              <span style={{ fontSize:9, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"#6E4C08", background:"#FFF8E7", padding:"3px 8px", borderRadius:99 }}>{(vendor.verification_status||"pending").replace("_"," ")}</span>
               {vendor.is_women_owned && <span style={{ fontSize:9, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"#db2777", background:"rgba(244,114,182,.1)", padding:"2px 8px", borderRadius:99 }}>Women-led</span>}
             </div>
             <div style={{ fontSize:13, color:"var(--muted,#67788D)", marginBottom:8 }}>
@@ -164,6 +166,10 @@ function VendorApprovalCard({ vendor, onVerify, onReject, toast }) {
               onMouseEnter={e=>{ e.currentTarget.style.background="var(--red-bg,#FAEBE8)"; }}
               onMouseLeave={e=>{ e.currentTarget.style.background="none"; }}>
               ✕ Reject
+            </button>
+            <button onClick={()=>onRequestChanges(vendor)}
+              style={{ background:"none", border:"1.5px solid #B8720A", borderRadius:6, padding:"9px 16px", fontSize:12, fontWeight:600, color:"#8B5A00", cursor:"pointer", fontFamily:"'DM Sans',sans-serif" }}>
+              Request changes
             </button>
           </div>
         </div>
@@ -331,6 +337,7 @@ export default function AdminDashboard() {
   const toast = useToast();
   const tab = loc.pathname.includes("approvals")    ? "approvals"
     : loc.pathname.includes("users")                ? "users"
+    : loc.pathname.includes("operations")           ? "operations"
     : loc.pathname.includes("impact")               ? "impact"
     : loc.pathname.includes("notify")               ? "notify"
     : loc.pathname.includes("analytics")            ? "analytics"
@@ -344,6 +351,7 @@ export default function AdminDashboard() {
           { id:"overview",  label:"Overview",   icon:"home" },
           { id:"approvals", label:"Approvals",  icon:"check" },
           { id:"users",     label:"Users",      icon:"users" },
+          { id:"operations",label:"Operations", icon:"clipboard" },
           { id:"impact",    label:"Impact",     icon:"leaf" },
           { id:"notify",    label:"Notify",     icon:"bell" },
           { id:"analytics", label:"Analytics",  icon:"chart" },
@@ -362,6 +370,7 @@ export default function AdminDashboard() {
       {tab==="overview"  && <AdminOverview  toast={toast} nav={nav}/>}
       {tab==="approvals" && <AdminApprovals toast={toast}/>}
       {tab==="users"     && <AdminUsers     toast={toast}/>}
+      {tab==="operations"&& <AdminOperationsCenter toast={toast}/>}
       {tab==="impact"    && <AdminImpact    toast={toast}/>}
       {tab==="notify"    && <AdminNotify    toast={toast}/>}
       {tab==="analytics" && <AdminAnalytics toast={toast}/>}
@@ -510,6 +519,8 @@ function AdminApprovals({ toast }) {
   const [loading, setLoading]     = useState(true);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [confirmVerify, setConfirmVerify] = useState(null);
+  const [changesTarget, setChangesTarget] = useState(null);
+  const [changesNote, setChangesNote] = useState("");
   const [selected, setSelected]   = useState(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
@@ -587,6 +598,7 @@ function AdminApprovals({ toast }) {
                   <VendorApprovalCard vendor={v}
                     onVerify={(v)=>setConfirmVerify(v)}
                     onReject={(v)=>setRejectTarget(v)}
+                    onRequestChanges={(v)=>{setChangesTarget(v);setChangesNote("");}}
                     toast={toast}/>
                 </div>
               </div>
@@ -602,6 +614,18 @@ function AdminApprovals({ toast }) {
       {/* Reject modal */}
       <Modal open={!!rejectTarget} onClose={()=>setRejectTarget(null)} title={`Reject — ${rejectTarget?.organization_name}`} width={500}>
         <RejectVendorForm vendor={rejectTarget} onReject={reject} onClose={()=>setRejectTarget(null)}/>
+      </Modal>
+
+      <Modal open={!!changesTarget} onClose={()=>setChangesTarget(null)} title={`Request changes — ${changesTarget?.organization_name}`} width={500}>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:13,color:"var(--muted,#67788D)",lineHeight:1.55}}>Explain exactly what the vendor must correct or upload. This note is retained with the verification decision.</div>
+          <textarea value={changesNote} onChange={e=>setChangesNote(e.target.value)} rows={5} placeholder="e.g. Upload a current GST certificate and correct the legal business name."
+            style={{width:"100%",padding:"11px 14px",fontSize:14,fontFamily:"'DM Sans',sans-serif",background:"var(--cream,#F2EBD9)",color:"var(--navy,#0B1D33)",border:"1.5px solid var(--border,#D4C9B5)",borderRadius:6,outline:"none",resize:"vertical",lineHeight:1.6}}/>
+          <div style={{display:"flex",gap:10}}>
+            <Btn variant="ghost" fullWidth onClick={()=>setChangesTarget(null)}>Cancel</Btn>
+            <Btn fullWidth disabled={!changesNote.trim()} onClick={async()=>{try{await adminAPI.requestVendorChanges(changesTarget.vendor_id,changesNote.trim());toast.success("Changes requested");setChangesTarget(null);load();}catch{toast.error("Could not request changes");}}}>Send request</Btn>
+          </div>
+        </div>
       </Modal>
     </div>
   );

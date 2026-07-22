@@ -21,14 +21,18 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const acceptSession = useCallback(data => {
+    localStorage.setItem("token", data.access_token);
+    localStorage.setItem("role",  data.role);
+    localStorage.setItem("name",  data.name);
+    if (data.permissions) localStorage.setItem("permissions", JSON.stringify(data.permissions));
+    setUser(data);
+    return data;
+  }, []);
+
   const login = async (email, password) => {
     const res = await authAPI.login({ email, password });
-    localStorage.setItem("token", res.data.access_token);
-    localStorage.setItem("role",  res.data.role);
-    localStorage.setItem("name",  res.data.name);
-    if (res.data.permissions) localStorage.setItem("permissions", JSON.stringify(res.data.permissions));
-    setUser(res.data);
-    return res.data;
+    return acceptSession(res.data);
   };
 
   const logout = useCallback(() => {
@@ -38,7 +42,7 @@ export function AuthProvider({ children }) {
   }, [navigate]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, acceptSession, logout }}>
       {children}
     </AuthContext.Provider>
   );

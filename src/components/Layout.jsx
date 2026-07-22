@@ -9,6 +9,7 @@ const NAV_ITEMS = {
     { id:"profile",       label:"Profile",       icon:"user",      path:"/dashboard/profile" },
     { id:"services",      label:"Services",      icon:"grid",      path:"/dashboard/services" },
     { id:"opportunities", label:"Opportunities", icon:"search",    path:"/dashboard/opportunities" },
+    { id:"messages",      label:"Messages",      icon:"send",      path:"/messages" },
     { id:"esg",           label:"ESG Score",     icon:"leaf",      path:"/dashboard/esg" },
   ],
   buyer: [

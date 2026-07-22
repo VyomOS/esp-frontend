@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Layout from "../components/Layout";
-import { buyerAPI, vendorAPI, chatAPI, notificationAPI, resolveMediaUrl } from "../api/api";
+import { apiErrorMessage, buyerAPI, vendorAPI, chatAPI, notificationAPI, resolveMediaUrl } from "../api/api";
+import LocationAutocomplete from "../components/LocationAutocomplete";
 import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
@@ -125,6 +126,7 @@ function BuyerHome({ toast, nav }) {
   const [activeIndustry, setActiveIndustry] = useState("");
   const [buyerProfile, setBuyerProfile] = useState(null);
   const [locationInput, setLocationInput] = useState("");
+  const [locationKey, setLocationKey] = useState("");
   const [savingLocation, setSavingLocation] = useState(false);
   const [popularFacts, setPopularFacts] = useState([]);
 
@@ -133,6 +135,7 @@ function BuyerHome({ toast, nav }) {
       const profile = profileResponse.data;
       setBuyerProfile(profile);
       setLocationInput(profile?.location || "");
+      setLocationKey(profile?.location_key || "");
       return Promise.allSettled([
         buyerAPI.getMyRequests(), vendorAPI.getRanked(profile?.location?{location:profile.location}:undefined),
         notificationAPI.getAll({ unread_only: true, limit: 3 }), buyerAPI.marketplacePopular(),
@@ -154,15 +157,15 @@ function BuyerHome({ toast, nav }) {
 
   const saveBuyerLocation = async () => {
     const location = locationInput.trim();
-    if (!location) { toast.error("Enter your city or region"); return; }
+    if (!location || !locationKey) { toast.error("Choose a recommended city and state"); return; }
     setSavingLocation(true);
     try {
-      await buyerAPI.createProfile({ location });
-      setBuyerProfile(profile=>({...profile,location}));
+      await buyerAPI.createProfile({ location, location_key: locationKey });
+      setBuyerProfile(profile=>({...profile,location,location_key:locationKey}));
       const ranked = await vendorAPI.getRanked({ location });
       setVendors((ranked.data||[]).slice(0,4));
       toast.success("Location saved. Same-area suppliers are shown first.");
-    } catch (err) { toast.error(err.response?.data?.detail || "Could not save location"); }
+    } catch (err) { toast.error(apiErrorMessage(err, "Could not save location")); }
     finally { setSavingLocation(false); }
   };
 
@@ -253,9 +256,8 @@ function BuyerHome({ toast, nav }) {
           <div style={{ fontSize:13, fontWeight:800, color:"#0F172A" }}>{buyerProfile?.location?`Same-area suppliers first: ${buyerProfile.location}`:"Where are you procuring from?"}</div>
           <div style={{ fontSize:11, color:"#64748B", marginTop:2 }}>Location is used as an area match, not a distance radius.</div>
         </div>
-        <input value={locationInput} onChange={e=>setLocationInput(e.target.value)} placeholder="City, State"
-          style={{ minWidth:190, padding:"9px 11px", border:"1px solid #CBD5E1", borderRadius:6, fontFamily:"'DM Sans',sans-serif" }}/>
-        <button onClick={saveBuyerLocation} disabled={savingLocation} style={{ background:"#18664A", color:"white", border:"none", borderRadius:6, padding:"10px 14px", fontSize:12, fontWeight:800, cursor:savingLocation?"wait":"pointer" }}>{savingLocation?"Saving...":"Save location"}</button>
+        <LocationAutocomplete className="dashboard-location-picker" value={locationInput} selectedKey={locationKey} label="City or PIN" onSelect={item=>{setLocationInput(item.profile_location);setLocationKey(item.key);}} onClear={()=>setLocationKey("")} />
+        <button onClick={saveBuyerLocation} disabled={savingLocation || !locationKey} style={{ background:"#18664A", color:"white", border:"none", borderRadius:6, padding:"10px 14px", fontSize:12, fontWeight:800, cursor:savingLocation?"wait":"pointer" }}>{savingLocation?"Saving...":"Save location"}</button>
       </div>
 
       <div>

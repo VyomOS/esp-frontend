@@ -5,6 +5,7 @@ import { useToast } from "../context/ToastContext";
 import { Btn, Input, Textarea, Select, Modal, Empty } from "../components/UI";
 import ConfirmModal from "../components/ConfirmModal";
 import SectorIcon, { sectorIconKey } from "../components/SectorIcon";
+import VendorDocumentsCenter from "../components/VendorDocumentsCenter";
 import { useLocation, useNavigate } from "react-router-dom";
 
 /* ─────────────────────────────────── constants ── */
@@ -364,6 +365,8 @@ export default function VendorDashboard() {
   const tab = loc.pathname.includes("profile")      ? "profile"
     : loc.pathname.includes("services")             ? "services"
     : loc.pathname.includes("opportunities")        ? "opportunities"
+    : loc.pathname.includes("documents")            ? "documents"
+    : loc.pathname.includes("vci")                  ? "vci"
     : loc.pathname.includes("esg")                  ? "esg"
     : "home";
 
@@ -403,15 +406,18 @@ export default function VendorDashboard() {
       {/* Tab bar */}
       <div style={{ display:"flex", gap:0, borderBottom:"1.5px solid var(--border)", marginBottom:28, flexWrap:"wrap" }}>
         {[
-          { id:"home",          label:"Home",         icon:"home" },
-          { id:"profile",       label:"Profile",      icon:"user" },
-          { id:"services",      label:"Services",     icon:"grid" },
-          { id:"opportunities", label:"Opportunities",icon:"clipboard" },
+          { id:"home",          label:"Overview",     icon:"home" },
+          { id:"profile",       label:"Store profile",icon:"user" },
+          { id:"services",      label:"Listings",     icon:"grid" },
+          { id:"opportunities", label:"Leads & bids", icon:"clipboard" },
+          { id:"documents",     label:"Documents",    icon:"file" },
           { id:"esg",           label:"ESG",          icon:"leaf" },
+          { id:"vci",           label:"VCI",          icon:"check" },
+          { id:"messages",      label:"Messages",     icon:"message", path:"/messages" },
         ].map(t=>{
           const active = t.id === tab;
           return (
-            <button key={t.id} onClick={()=>nav(t.id==="home"?"/dashboard":`/dashboard/${t.id}`)}
+            <button key={t.id} onClick={()=>nav(t.path || (t.id==="home"?"/dashboard":`/dashboard/${t.id}`))}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 18px", background:"none", border:"none", cursor:"pointer", fontFamily:"'DM Sans',sans-serif", fontWeight:600, fontSize:13, letterSpacing:".01em", color:active?"var(--navy,#0B1D33)":"var(--text3,#67788D)", borderBottom:`2px solid ${active?"var(--teal,#18664A)":"transparent"}`, marginBottom:"-1.5px", transition:"all .16s" }}>
               <span style={{ display:"flex" }}><SectorIcon iconKey={t.icon} size={16}/></span>{t.label}
             </button>
@@ -419,13 +425,48 @@ export default function VendorDashboard() {
         })}
       </div>
 
+      <VendorAssistanceCard toast={toast}/>
+
       {tab === "home"          && <VendorHome toast={toast} nav={nav}/>}
       {tab === "profile"       && <VendorProfile toast={toast}/>}
       {tab === "services"      && <VendorServices toast={toast}/>}
       {tab === "opportunities" && <VendorOpportunities toast={toast}/>}
+      {tab === "documents"     && <VendorDocumentsCenter toast={toast}/>}
       {tab === "esg"           && <VendorESG toast={toast}/>}
+      {tab === "vci"           && <VendorVCI toast={toast}/>}
     </Layout>
   );
+}
+
+function VendorAssistanceCard({ toast }) {
+  const [open,setOpen] = useState(false);
+  const [saving,setSaving] = useState(false);
+  const [form,setForm] = useState({topic:"profile",preferred_channel:"email",phone:"",note:"",consent:false});
+  const submit = async()=>{setSaving(true);try{await vendorAPI.createAssistanceLead(form);toast.success("Help request sent to the Even team");setOpen(false);setForm({topic:"profile",preferred_channel:"email",phone:"",note:"",consent:false});}catch(err){toast.error(err.response?.data?.detail||"Could not send help request");}finally{setSaving(false);}};
+  return <>
+    <div className="vendor-help-card">
+      <div><strong>Need help getting marketplace-ready?</strong><span>Our team can help with your profile, documents, catalogue, ESG and VCI.</span></div>
+      <Btn size="sm" onClick={()=>setOpen(true)}>Ask the Even team</Btn>
+    </div>
+    <Modal open={open} onClose={()=>setOpen(false)} title="Ask the Even team for help">
+      <div style={{display:"flex",flexDirection:"column",gap:13}}>
+        <div><label className="field-label">Help topic</label><select className="catalogue-select" value={form.topic} onChange={e=>setForm(p=>({...p,topic:e.target.value}))}><option value="profile">Build my profile</option><option value="documents">Collect or verify documents</option><option value="catalogue">Create my service catalogue</option><option value="esg">Calculate ESG data</option><option value="vci">Start or connect VCI</option><option value="other">Something else</option></select></div>
+        <div><label className="field-label">Preferred contact channel</label><select className="catalogue-select" value={form.preferred_channel} onChange={e=>setForm(p=>({...p,preferred_channel:e.target.value}))}><option value="email">Email</option><option value="phone">Phone</option><option value="whatsapp">WhatsApp</option></select></div>
+        {form.preferred_channel!=="email"&&<Input label="Phone number" value={form.phone} onChange={e=>setForm(p=>({...p,phone:e.target.value}))} placeholder="Your contact number"/>}
+        <Textarea rows={4} value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="Tell us what you need help with"/>
+        <label style={{display:"flex",gap:9,alignItems:"flex-start",fontSize:12,lineHeight:1.5,color:"var(--muted)"}}><input type="checkbox" checked={form.consent} onChange={e=>setForm(p=>({...p,consent:e.target.checked}))}/>I consent to the Even team contacting me about this request.</label>
+        <Btn fullWidth loading={saving} disabled={!form.consent} onClick={submit}>Send help request</Btn>
+      </div>
+    </Modal>
+  </>;
+}
+
+function VendorVCI() {
+  const [credentials,setCredentials]=useState([]); const [loading,setLoading]=useState(true);
+  useEffect(()=>{vendorAPI.getMyVciCredentials().then(r=>setCredentials(r.data||[])).finally(()=>setLoading(false));},[]);
+  if(loading)return <div className="skeleton" style={{height:220,borderRadius:14}}/>;
+  const current=credentials.find(item=>item.status==="approved"&&!item.superseded_at&&new Date(item.expires_at)>new Date());
+  return <div style={{animation:"fadeUp .4s ease"}}><div style={{marginBottom:20}}><h2 style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"var(--navy)"}}>Vendor Competitiveness Index</h2><p style={{fontSize:13,color:"var(--muted)",marginTop:4}}>VCI is a separate, versioned credential and is not calculated from your ESG score.</p></div>{current?<div className="vci-card"><div><span>VCI VERIFIED</span><strong>{current.composite_score}</strong><small>/ 100</small></div><div><h3>{current.maturity_band}</h3><p>Tier 1 gate: {current.tier1_passed?"Passed":"Not passed"}</p><p>Framework {current.framework_version} · valid until {new Date(current.expires_at).toLocaleDateString()}</p></div></div>:<div className="vci-empty"><strong>VCI is not connected yet</strong><p>Complete the approved VCI assessment, then ask the Even team to review and connect your credential.</p><a href="https://even-procurement-advisory.vercel.app/dashboard" target="_blank" rel="noreferrer">Open VCI advisory assessment ↗</a></div>}</div>;
 }
 
 /* ─────────────────────────────────── HOME tab ── */
@@ -1188,6 +1229,7 @@ function VendorServices({ toast }) {
   const [draftLoading, setDraftLoading] = useState(false);
   const [approving, setApproving] = useState("");
   const [websiteImage, setWebsiteImage] = useState("");
+  const [publishing, setPublishing] = useState("");
 
   const load = ()=>{
     Promise.allSettled([vendorAPI.getMyServices(), vendorAPI.getMyProfile()])
@@ -1233,6 +1275,21 @@ function VendorServices({ toast }) {
   };
   const generateImage = async service => { setImageBusy(`ai-${service.id}`); try { await vendorAPI.generateServiceImage(service.id); toast.success("Catalogue photo generated and saved"); load(); } catch(err){ toast.error(err.response?.data?.detail||"Could not generate photo"); } finally { setImageBusy(""); } };
   const uploadImage = async (service,file) => { if(!file)return; setImageBusy(`upload-${service.id}`); try { await vendorAPI.uploadServiceImage(service.id,file); toast.success("Service photo saved"); load(); } catch(err){ toast.error(err.response?.data?.detail||"Could not upload photo"); } finally { setImageBusy(""); } };
+  const togglePublication = async service => {
+    setPublishing(String(service.id));
+    try {
+      if (service.listing_status === "published") {
+        await vendorAPI.unpublishService(service.id);
+        toast.success("Service moved back to draft");
+      } else {
+        await vendorAPI.publishService(service.id);
+        toast.success("Service is now live in the marketplace");
+      }
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not update publication status");
+    } finally { setPublishing(""); }
+  };
 
   const generateServiceDrafts = async () => {
     if (!website.trim()) { toast.error("Add your public website URL first"); return; }
@@ -1275,6 +1332,12 @@ function VendorServices({ toast }) {
         <Btn onClick={()=>{setEditingService(null);setForm(emptyService);setModal(true)}} size="sm">+ Add service</Btn>
       </div>
 
+      {profile?.verification_status !== "verified" && (
+        <div role="status" style={{ background:"#FFF8E7", border:"1px solid #E8CA82", borderRadius:12, padding:"13px 16px", marginBottom:18, color:"#6E4C08", fontSize:13, lineHeight:1.55 }}>
+          <strong>Your services are saved as drafts.</strong> Complete verification and wait for admin approval before publishing them to buyers.
+        </div>
+      )}
+
       <div style={{ background:"white", border:"1px solid var(--border,#D4C9B5)", borderRadius:12, padding:"18px 20px", marginBottom:18 }}>
         <div style={{ fontSize:14, fontWeight:700, color:"var(--navy,#0B1D33)", marginBottom:4 }}>Draft services from your website</div>
         <div style={{ fontSize:12, color:"var(--muted,#67788D)", lineHeight:1.5, marginBottom:12 }}>We will read public website text and suggest editable drafts. Nothing is added until you approve it.</div>
@@ -1316,12 +1379,12 @@ function VendorServices({ toast }) {
               <div key={s.id} className="vendor-service-card">
                 <div className="vendor-service-photo">{s.image_url ? <img src={resolveMediaUrl(s.image_url)} alt={`${s.title} catalogue`}/> : <span>Add a real catalogue photo</span>}</div>
                 <div style={{minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:5}}><strong style={{fontSize:15,color:"var(--navy)"}}>{s.title}</strong>{s.offer_active&&<span className="live-offer-chip">OFFER LIVE</span>}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:5}}><strong style={{fontSize:15,color:"var(--navy)"}}>{s.title}</strong><span className={`listing-status-chip listing-${s.listing_status||"draft"}`}>{(s.listing_status||"draft").replace("_"," ")}</span>{s.offer_active&&<span className="live-offer-chip">OFFER LIVE</span>}</div>
                   {s.description&&<div style={{fontSize:12,color:"var(--muted)",lineHeight:1.5,marginBottom:9}}>{s.description}</div>}
                   <div style={{display:"flex",gap:9,alignItems:"center",flexWrap:"wrap",fontSize:11}}><span className="service-category-chip">{s.category}</span>{s.base_price!=null&&<strong>{s.currency} {s.offer_active&&s.offer_price!=null?s.offer_price:s.base_price}{s.unit?` / ${s.unit}`:""}</strong>}{s.offer_active&&s.offer_price!=null&&<del>{s.currency} {s.base_price}</del>}{s.base_price==null&&<span>{s.price_range||"Request a quote"}</span>}</div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:13}}><Btn onClick={()=>generateImage(s)} loading={imageBusy===`ai-${s.id}`} variant="ghost" size="sm">Generate photo</Btn><label className="service-upload-label">{imageBusy===`upload-${s.id}`?"Uploading...":"Upload photo"}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>uploadImage(s,e.target.files?.[0])} hidden/></label></div>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",gap:7}}><Btn onClick={()=>editService(s)} variant="ghost" size="sm">Edit & offer</Btn><Btn onClick={()=>setConfirmDelete(s.id)} variant="ghost" size="sm">Remove</Btn></div>
+                <div style={{display:"flex",flexDirection:"column",gap:7}}><Btn onClick={()=>togglePublication(s)} loading={publishing===String(s.id)} disabled={s.listing_status!=="published"&&profile?.verification_status!=="verified"} size="sm" variant={s.listing_status==="published"?"ghost":undefined}>{s.listing_status==="published"?"Unpublish":"Publish"}</Btn><Btn onClick={()=>editService(s)} variant="ghost" size="sm">Edit & offer</Btn><Btn onClick={()=>setConfirmDelete(s.id)} variant="ghost" size="sm">Remove</Btn></div>
               </div>
             ))}
           </div>

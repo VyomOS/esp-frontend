@@ -19,6 +19,8 @@ export function Btn({ children, onClick, variant="primary", size="md", fullWidth
   const s = sizes[size] || sizes.md;
   return (
     <button type={type}
+      disabled={Boolean(disabled || loading)}
+      aria-busy={loading ? "true" : undefined}
       onClick={!disabled && !loading ? onClick : undefined}
       style={{
         display:"inline-flex", alignItems:"center", justifyContent:"center", gap:7,
