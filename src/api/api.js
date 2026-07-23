@@ -1,8 +1,24 @@
 import axios from "axios";
 
-const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
-});
+const BASE = import.meta.env.DEV ? "http://127.0.0.1:8002" : (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000");
+export const resolveMediaUrl = value => !value ? "" : value.startsWith("/") ? `${BASE}${value}` : value;
+export const apiErrorMessage = (error, fallback = "Something went wrong") => {
+  const detail = error?.response?.data?.detail ?? error?.message;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail.map(item => typeof item === "string" ? item : item?.msg || item?.message).filter(Boolean);
+    if (messages.length) return [...new Set(messages)].join(". ");
+  }
+  if (detail && typeof detail === "object") return detail.message || detail.msg || fallback;
+  return fallback;
+};
+
+const API = axios.create({ baseURL: BASE });
+
+// Ping backend on load to wake it up (Render free tier sleeps after inactivity)
+if (BASE.includes("onrender.com")) {
+  axios.get(`${BASE}/health`).catch(()=>{});
+}
 
 API.interceptors.request.use(cfg => {
   const token = localStorage.getItem("token");
@@ -15,107 +31,210 @@ API.interceptors.response.use(
   err => {
     if (err.response?.status === 401) {
       localStorage.clear();
-      window.location.href = "/";
+      window.location.href = "/signin";
     }
     return Promise.reject(err);
   }
 );
 
 export const authAPI = {
-  register:           data  => API.post("/auth/register", data),
-  login:              data  => API.post("/auth/login", data),
-  verifyEmail:        token => API.get(`/auth/verify-email?token=${token}`),
+  register: data => API.post("/auth/register", data),
+  registerBuyer: data => API.post("/auth/register/buyer", data),
+  login: data => API.post("/auth/login", { email: data.email, password: data.password }),
+  verifyEmail: token => API.get(`/auth/verify-email?token=${token}`), 
   resendVerification: email => API.post("/auth/resend-verification", { email }),
-  forgotPassword:     email => API.post("/auth/forgot-password", { email }),
-  resetPassword:      data  => API.post("/auth/reset-password", data),
-  changePassword:     data  => API.post("/auth/change-password", data),
-  me:                 ()    => API.get("/auth/me"),
+  forgotPassword: email => API.post("/auth/forgot-password", { email }),
+  resetPassword: data => API.post("/auth/reset-password", data),
+  changePassword: data => API.post("/auth/change-password", data),
+  deleteAccount: data => API.post("/auth/delete-account", data),
+  me: () => API.get("/auth/me"),
+};
+
+export const marketplaceAPI = {
+  listServices: params => API.get("/marketplace/services", { params }),
+  getService: id => API.get(`/marketplace/services/${id}`),
+  suggestions: q => API.get("/marketplace/suggestions", { params: { q } }),
+  reviews: id => API.get(`/marketplace/services/${id}/reviews`),
+  similar: (id, limit = 4) => API.get(`/marketplace/services/${id}/similar`, { params: { limit } }),
 };
 
 export const vendorAPI = {
-  createProfile:    data     => API.post("/vendor/profile", data),
-  getMyProfile:     ()       => API.get("/vendor/profile/me"),
-  updateProfile:    data     => API.patch("/vendor/profile/me", data),
-  listVendors:      params   => API.get("/vendor/", { params }),
-  getVendor:        id       => API.get(`/vendor/${id}`),
-  getRanked:        ()       => API.get("/vendor/ranked/list"),
-  completeness:     ()       => API.get("/vendor/profile/completeness"),
-  esgCompliance:    ()       => API.get("/vendor/esg/compliance"),
-  getCertGaps:      ()       => API.get("/vendor/certification/gaps"),
-  dismissGap:       type     => API.post(`/vendor/certification/gaps/${type}/dismiss`),
-  verifyGST:        data     => API.post("/vendor/verify-gst", data),
-  verifyPAN:        data     => API.post("/vendor/verify-pan", data),
-  lookupCompany:    data     => API.post("/vendor/lookup-company", data),
-  addService:       data     => API.post("/vendor/services", data),
-  getMyServices:    ()       => API.get("/vendor/services/mine"),
-  deleteService:    id       => API.delete(`/vendor/services/${id}`),
-  uploadDocument:   fd       => API.post("/vendor/documents/upload", fd, { headers: { "Content-Type": "multipart/form-data" } }),
-  getMyDocuments:   ()       => API.get("/vendor/documents/mine"),
-  deleteDocument:   id       => API.delete(`/vendor/documents/${id}`),
-  uploadCatalogue:  fd       => API.post("/vendor/catalogue/upload", fd, { headers: { "Content-Type": "multipart/form-data" } }),
-  getMyCatalogues:  ()       => API.get("/vendor/catalogue/mine"),
-  deleteCatalogue:  id       => API.delete(`/vendor/catalogue/${id}`),
-  addESG:           data     => API.post("/vendor/esg", data),
-  getESG:           id       => API.get(`/vendor/esg/${id}`),
+  createProfile: data => API.post("/vendor/profile", data),
+  getMyProfile: () => API.get("/vendor/profile/me"),
+  updateProfile: data => API.patch("/vendor/profile/me", data),
+  listVendors: params => API.get("/vendor/", { params }),
+  getVendor: id => API.get(`/vendor/${id}`),
+  getRanked: params => API.get("/vendor/ranked/list", { params }),
+  completeness: () => API.get("/vendor/profile/completeness"),
+  esgCompliance: () => API.get("/vendor/esg/compliance"),
+  getMyRatings: () => API.get("/vendor/profile/me/ratings"),
+  getVendorRatings: id => API.get(`/vendor/${id}/ratings`),
+  getCertGaps: () => API.get("/vendor/certification/gaps"),
+  dismissGap: type => API.post(`/vendor/certification/gaps/${type}/dismiss`),
+  verifyGST: data => API.post("/vendor/verify-gst", data),
+  verifyPAN: data => API.post("/vendor/verify-pan", data),
+  lookupCompany: data => API.post("/vendor/lookup-company", data),
+  companySuggest: q => API.get("/vendor/company-suggest", { params: { q } }),
+  smartPrefill: data => API.post("/vendor/smart-prefill", data),
+  addService: data => API.post("/vendor/services", data),
+  updateService: (id, data) => API.patch(`/vendor/services/${id}`, data),
+  publishService: id => API.post(`/vendor/services/${id}/publish`),
+  unpublishService: id => API.post(`/vendor/services/${id}/unpublish`),
+  getMyServices: () => API.get("/vendor/services/mine"),
+  createAssistanceLead: data => API.post("/vendor/assistance-leads", data),
+  getMyAssistanceLeads: () => API.get("/vendor/assistance-leads/mine"),
+  getMyVciCredentials: () => API.get("/vendor/vci/credentials/mine"),
+  deleteService: id => API.delete(`/vendor/services/${id}`),
+  uploadServiceImage: (id, file) => { const fd = new FormData(); fd.append("file", file); return API.post(`/vendor/services/${id}/image`, fd, { headers: { "Content-Type":"multipart/form-data" } }); },
+  generateServiceImage: (id, direction="") => API.post(`/vendor/services/${id}/generate-image`, { direction }),
+  uploadDocument: fd => API.post("/vendor/documents/upload", fd, { headers: { "Content-Type": "multipart/form-data" } }),
+  getMyDocuments: () => API.get("/vendor/documents/mine"),
+  deleteDocument: id => API.delete(`/vendor/documents/${id}`),
+  uploadCatalogue: fd => API.post("/vendor/catalogue/upload", fd, { headers: { "Content-Type": "multipart/form-data" } }),
+  getMyCatalogues: () => API.get("/vendor/catalogue/mine"),
+  deleteCatalogue: id => API.delete(`/vendor/catalogue/${id}`),
+  addESG: data => API.post("/vendor/esg", data),
+  getESG: id => API.get(`/vendor/esg/${id}`),
+  // Dedicated AI endpoints
+  aiProfileAdvice: data => API.post("/vendor/ai-profile-advice", data),
+  aiDescription: data => API.post("/vendor/ai-description", data),
+  aiServiceDrafts: data => API.post("/vendor/ai-service-drafts", data),
+  aiSector: data => API.post("/vendor/ai-sector", data),
+  aiBidDraft: data => API.post("/vendor/ai-bid-draft", data),
+  aiEsgInsight: data => API.post("/vendor/ai-esg-insight", data),
+  aiCompanyEnrich: data => API.post("/vendor/ai-company-enrich", data),
 };
 
 export const buyerAPI = {
-  createProfile:    data   => API.post("/buyer/profile", data),
-  getMyProfile:     ()     => API.get("/buyer/profile/me"),
-  createRequest:    data   => API.post("/buyer/requests", data),
-  getMyRequests:    p      => API.get("/buyer/requests/mine", { params: p }),
-  listRequests:     p      => API.get("/buyer/requests", { params: p }),
-  getRequest:       id     => API.get(`/buyer/requests/${id}`),
-  closeRequest:     (id,d) => API.post(`/buyer/requests/${id}/close`, d),
-  reopenRequest:    id     => API.post(`/buyer/requests/${id}/reopen`),
-  deleteRequest:    id     => API.delete(`/buyer/requests/${id}`),
-  rateVendor:       data   => API.post("/buyer/rate", data),
-  getRating:        vid    => API.get(`/buyer/rating/${vid}`),
-  aiMatch:          rid    => API.get(`/buyer/requests/${rid}/ai-match`),
-  getNotifications: ()     => API.get("/buyer/notifications"),
-  markRead:         id     => API.patch(`/buyer/notifications/${id}/read`),
-  markAllRead:      ()     => API.post("/buyer/notifications/mark-all-read"),
-  getBidsOnRequest: rid    => API.get(`/bids/request/${rid}`),
-  updateBidStatus:  (id,d) => API.patch(`/bids/${id}/status`, d),
+  createProfile: data => API.post("/buyer/profile", data),
+  getMyProfile: () => API.get("/buyer/profile/me"),
+  updateProfile: data => API.patch("/buyer/profile/me", data),
+  addresses: () => API.get("/buyer/addresses"),
+  locationSuggestions: (q = "", limit = 8) => API.get("/buyer/location-suggestions", { params: { q, limit } }),
+  addAddress: data => API.post("/buyer/addresses", data),
+  updateAddress: (id, data) => API.patch(`/buyer/addresses/${id}`, data),
+  defaultAddress: id => API.post(`/buyer/addresses/${id}/default`),
+  deleteAddress: id => API.delete(`/buyer/addresses/${id}`),
+  saved: () => API.get("/buyer/saved"),
+  save: data => API.post("/buyer/saved", data),
+  unsave: (type, id) => API.delete(`/buyer/saved/${type}/${id}`),
+  quotes: () => API.get("/buyer/quotes"),
+  reviewEligibility: id => API.get(`/buyer/services/${id}/review-eligibility`),
+  reviewService: (id, data) => API.post(`/buyer/services/${id}/reviews`, data),
+  marketplacePopular: () => API.get("/buyer/marketplace/popular"),
+  createRequest: data => API.post("/buyer/requests", data),
+  getMyRequests: p => API.get("/buyer/requests/mine", { params: p }),
+  listRequests: p => API.get("/buyer/requests", { params: p }),
+  getRequest: id => API.get(`/buyer/requests/${id}`),
+  closeRequest: (id, d) => API.post(`/buyer/requests/${id}/close`, d),
+  reopenRequest: id => API.post(`/buyer/requests/${id}/reopen`),
+  deleteRequest: id => API.delete(`/buyer/requests/${id}`),
+  rateVendor: data => API.post("/buyer/rate", data),
+  getRating: vid => API.get(`/buyer/rating/${vid}`),
+  getBidsOnRequest: rid => API.get(`/bids/request/${rid}`),
+  updateBidStatus: (id, d) => API.patch(`/bids/${id}/status`, d),
+  // Dedicated AI endpoints
+  aiRfpDraft: data => API.post("/buyer/ai-rfp-draft", data),
+  aiBidComparison: data => API.post("/buyer/ai-bid-comparison", data),
+  aiSuggestions: data => API.post("/buyer/ai-suggestions", data),
+  aiVendorMatches: (rfpId, limit = 4) => API.get(`/buyer/vendors/${rfpId}/ai-matches`, { params: { limit } }),
 };
 
 export const bidAPI = {
-  submit:   data => API.post("/bids/submit", data),
-  myBids:   ()   => API.get("/bids/mine"),
-  withdraw: id   => API.delete(`/bids/${id}`),
+  submit: data => API.post("/bids/submit", data),
+  myBids: () => API.get("/bids/mine"),
+  withdraw: id => API.delete(`/bids/${id}`),
+};
+
+export const conversationAPI = {
+  list: () => API.get("/conversations"),
+  start: bidId => API.post(`/conversations/bids/${bidId}`),
+  detail: id => API.get(`/conversations/${id}`),
+  messages: id => API.get(`/conversations/${id}/messages`),
+  send: (id, body) => API.post(`/conversations/${id}/messages`, { body }),
+  read: id => API.post(`/conversations/${id}/read`),
+  block: id => API.post(`/conversations/${id}/block`),
+  unblock: id => API.delete(`/conversations/${id}/block`),
+  report: (id, data) => API.post(`/conversations/${id}/report`, data),
 };
 
 export const adminAPI = {
-  listUsers:        p     => API.get("/admin/users", { params: p }),
-  getUser:          id    => API.get(`/admin/users/${id}`),
-  updateUser:       (id,d)=> API.patch(`/admin/users/${id}`, d),
-  deactivateUser:   id    => API.delete(`/admin/users/${id}`),
-  pendingVendors:   ()    => API.get("/admin/vendors/pending"),
-  verifyVendor:     id    => API.post(`/admin/vendors/${id}/verify`),
-  rejectVendor:     (id,r)=> API.post(`/admin/vendors/${id}/reject`, { reason: r }),
-  unverifyVendor:   id    => API.post(`/admin/vendors/${id}/unverify`),
-  vendorDocuments:  id    => API.get(`/admin/vendors/${id}/documents`),
-  updateDocStatus:  (id,d)=> API.patch(`/admin/documents/${id}/status`, d),
-  downloadDocument: id    => {
+  listUsers: p => API.get("/admin/users", { params: p }),
+  getUser: id => API.get(`/admin/users/${id}`),
+  updateUser: (id, d) => API.patch(`/admin/users/${id}`, d),
+  deactivateUser: id => API.delete(`/admin/users/${id}`),
+  pendingVendors: () => API.get("/admin/vendors/pending"),
+  verifyVendor: id => API.post(`/admin/vendors/${id}/verify`),
+  rejectVendor: (id, r) => API.post(`/admin/vendors/${id}/reject`, { reason: r }),
+  unverifyVendor: id => API.post(`/admin/vendors/${id}/unverify`),
+  requestVendorChanges: (id, reason) => API.post(`/admin/vendors/${id}/request-changes`, { reason }),
+  restoreVendorReview: id => API.post(`/admin/vendors/${id}/restore`),
+  assistanceLeads: params => API.get("/admin/assistance-leads", { params }),
+  updateAssistanceLead: (id, data) => API.patch(`/admin/assistance-leads/${id}`, data),
+  issueVciCredential: (id, data) => API.post(`/admin/vendors/${id}/vci-credentials`, data),
+  bulkVerify: data => API.post("/admin/vendors/bulk-verify", data),
+  verifyGstin: id => API.post(`/admin/vendors/${id}/verify-gstin`),
+  unverifyGstin: id => API.post(`/admin/vendors/${id}/unverify-gstin`),
+  verifyPan: id => API.post(`/admin/vendors/${id}/verify-pan`),
+  unverifyPan: id => API.post(`/admin/vendors/${id}/unverify-pan`),
+  vendorDocuments: id => API.get(`/admin/vendors/${id}/documents`),
+  updateDocStatus: (id, d) => API.patch(`/admin/documents/${id}/status`, d),
+  getDocumentUrl: id => API.get(`/admin/documents/${id}/url`),
+  downloadDocument: id => {
     const token = localStorage.getItem("token");
-    const base  = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+    const base = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
     return `${base}/admin/documents/${id}/download?token=${token}`;
   },
-  impact:           ()    => API.get("/admin/impact"),
-  esgBreakdown:     ()    => API.get("/admin/impact/esg-breakdown"),
-  stats:            ()    => API.get("/admin/stats"),
-  sendNotification: data  => API.post("/admin/notifications/send", data),
+  impact: () => API.get("/admin/impact"),
+  esgBreakdown: () => API.get("/admin/impact/esg-breakdown"),
+  stats: () => API.get("/admin/stats"),
+  sendNotification: data => API.post("/admin/notifications/send", data),
+  improveNotification: data => API.post("/admin/ai-notification-draft", data),
+  exportPlatformData: () => API.get("/admin/export/platform-data", { responseType: "blob" }),
+  auditLog: params => API.get("/admin/audit-log", { params }),
+  // Analytics
+  analyticsVendorFunnel: () => API.get("/admin/analytics/vendor-funnel"),
+  analyticsRfpFunnel: () => API.get("/admin/analytics/rfp-funnel"),
+  analyticsEsgDistribution: () => API.get("/admin/analytics/esg-distribution"),
+  analyticsAiUsage: () => API.get("/admin/analytics/ai-usage"),
+  // Dedicated AI endpoints
+  aiDocCheck: data => API.post("/admin/ai-doc-check", data),
+  aiPlatformInsight: () => API.get("/admin/ai-platform-insight"),
+  aiImpactStory: () => API.get("/admin/ai-impact-story"),
+  // Team management
+  listAdmins: () => API.get("/admin/admins"),
+  createAdmin: data => API.post("/admin/create-admin", data),
+  updateAdminPermissions: (id, data) => API.patch(`/admin/admins/${id}/permissions`, data),
+  removeAdmin: id => API.delete(`/admin/admins/${id}`),
+};
+
+export const notificationAPI = {
+  getAll: params => API.get("/notifications", { params }),
+  markRead: id => API.patch(`/notifications/${id}/read`),
+  markAllRead: () => API.post("/notifications/mark-all-read"),
+  delete: id => API.delete(`/notifications/${id}`),
+  chatbotPending: () => API.get("/notifications/chatbot-pending"),
+  streamUrl: () => {
+    const token = localStorage.getItem("token");
+    const base = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+    return `${base}/notifications/stream-token?token=${token}`;
+  },
+};
+
+export const aiAPI = {
+  proactiveMessage: data => API.post("/ai/proactive-message", data),
 };
 
 export const chatAPI = {
-  chat:     data => API.post("/chatbot/chat", data),
-  listFAQs: ()   => API.get("/chatbot/faqs"),
+  chat: data => API.post("/chatbot/chat", data),
+  listFAQs: () => API.get("/chatbot/faqs"),
 };
 
 export const taxonomyAPI = {
-  categories:    () => API.get("/taxonomy/categories"),
-  sdgTags:       () => API.get("/taxonomy/sdg-tags"),
-  certTypes:     () => API.get("/taxonomy/certification-types"),
+  categories: () => API.get("/taxonomy/categories"),
+  sdgTags: () => API.get("/taxonomy/sdg-tags"),
+  certTypes: () => API.get("/taxonomy/certification-types"),
+  sectors: () => API.get("/taxonomy/sectors"),
 };
 
 export default API;

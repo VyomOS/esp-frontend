@@ -2,31 +2,39 @@ import { createContext, useContext, useState, useCallback } from "react";
 
 const ToastContext = createContext(null);
 
+function readableMessage(value) {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(item => readableMessage(item?.msg || item?.message || item)).filter(Boolean).join(". ");
+  if (value && typeof value === "object") return readableMessage(value.message || value.msg || value.detail || "Something went wrong");
+  return "Something went wrong";
+}
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  const addToast = useCallback((message, type = "info") => {
+  const add = useCallback((message, type="info") => {
     const id = Date.now();
-    setToasts(p => [...p, { id, message, type }]);
+    setToasts(p => [...p, { id, message: readableMessage(message), type }]);
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4000);
   }, []);
 
   const toast = {
-    success: msg => addToast(msg, "success"),
-    error:   msg => addToast(msg, "error"),
-    info:    msg => addToast(msg, "info"),
+    success: msg => add(msg, "success"),
+    error:   msg => add(msg, "error"),
+    warning: msg => add(msg, "warning"),
+    info:    msg => add(msg, "info"),
   };
+
+  const icons = { success:"✓", error:"✕", warning:"⚠", info:"ℹ" };
 
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      <div className="toast-container">
+      <div className="toast-wrap">
         {toasts.map(t => (
           <div key={t.id} className={`toast ${t.type}`}>
-            {t.type === "success" && "✓ "}
-            {t.type === "error"   && "✕ "}
-            {t.type === "info"    && "ℹ "}
-            {t.message}
+            <span style={{fontSize:15,flexShrink:0}}>{icons[t.type]}</span>
+            <span>{t.message}</span>
           </div>
         ))}
       </div>

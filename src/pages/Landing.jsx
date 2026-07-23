@@ -1,195 +1,42 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ThemePicker from "../components/ThemePicker";
-
-const STATS = [
-  { value: "10,000+", label: "Women Deployed",    icon: "👩" },
-  { value: "18",      label: "Cities Covered",    icon: "🏙" },
-  { value: "500+",    label: "MSME Vendors",      icon: "🏭" },
-  { value: "100%",    label: "ESG Verified",      icon: "✅" },
-];
-
-const FEATURES = [
-  { icon: "🔍", title: "Verified Vendor Registry", desc: "Every vendor is KYC-verified, ESG-scored, and certified before appearing on the platform. Zero unverified listings." },
-  { icon: "🤖", title: "AI Vendor Matching",       desc: "Post a procurement request and let AI surface the top 3 most suitable vendors based on your requirements and impact criteria." },
-  { icon: "🌱", title: "ESG Transparency",         desc: "Comprehensive 25-field ESG scoring across Environmental, Social, and Governance pillars. Every vendor gets a 0–100 score." },
-  { icon: "📋", title: "Smart Onboarding",         desc: "Vendors onboard in minutes. Auto-fill from GST, MCA, and Udyam registries. Upload a catalogue — AI extracts your services." },
-  { icon: "🏆", title: "Bid Management",           desc: "Buyers post RFPs with ESG criteria. Vendors submit proposals. Compare bids side-by-side. Award and track impact." },
-  { icon: "📊", title: "SDG Alignment",            desc: "Every procurement transaction is mapped to UN Sustainable Development Goals. Build your impact report automatically." },
-];
+import SectorIcon from "../components/SectorIcon";
+import MarketplaceHeader, { MarketplaceLogo } from "../components/MarketplaceHeader";
+import MarketplaceServiceCard, { servicePrice } from "../components/MarketplaceServiceCard";
+import { buyerAPI, marketplaceAPI, resolveMediaUrl } from "../api/api";
+import { useAuth } from "../context/AuthContext";
 
 const CATEGORIES = [
-  { icon: "🚚", name: "Logistics & Delivery" },
-  { icon: "🧹", name: "Facilities & Cleaning" },
-  { icon: "👥", name: "Staffing & Training" },
-  { icon: "🍱", name: "Food & Catering" },
-  { icon: "🧵", name: "Textiles & Apparel" },
-  { icon: "💻", name: "IT & Digital Services" },
-  { icon: "☀️", name: "Green & Sustainability" },
-  { icon: "🎨", name: "Handicrafts & Artisan" },
-  { icon: "🏥", name: "Healthcare & Wellness" },
-  { icon: "🏗️", name: "Construction & Fitout" },
+  { label: "All services", key: "", icon: "technology", tone: "violet" },
+  { label: "Logistics", key: "Logistics & Delivery", icon: "automotive", tone: "orange" },
+  { label: "Food & catering", key: "Food & Catering", icon: "food", tone: "green" },
+  { label: "Corporate gifts", key: "Handicrafts & Artisan", icon: "gifting", tone: "pink" },
+  { label: "Healthcare", key: "Healthcare & Wellness", icon: "healthcare", tone: "blue" },
+  { label: "IT services", key: "IT & Digital Services", icon: "technology", tone: "violet" },
 ];
-
-const ESG_BANDS = [
-  { band: "ESG Leader",       range: "80–100", color: "#34d399", desc: "Strong across all three pillars" },
-  { band: "ESG Progressing",  range: "60–79",  color: "#fbbf24", desc: "Good on 1–2 pillars, developing others" },
-  { band: "ESG Developing",   range: "40–59",  color: "#f97316", desc: "Partial compliance with gaps flagged" },
-  { band: "ESG Baseline",     range: "0–39",   color: "#f87171", desc: "Early stage with improvement roadmap" },
-];
+const RECOMMENDED = ["Corporate gifts", "Office catering", "Last-mile delivery", "Workplace healthcare"];
 
 export default function Landing() {
-  const navigate = useNavigate();
-
-  const hdr = {
-    position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-    background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)",
-    borderBottom: "1px solid rgba(255,107,53,0.1)",
-    display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "0 48px", height: 64,
-  };
-
-  return (
-    <div style={{ fontFamily: "DM Sans, sans-serif", color: "#1a1a2e", background: "#ffffff" }}>
-      {/* Header */}
-      <header style={hdr}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 36, height: 36, background: "#ff6b35", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Syne", fontWeight: 800, fontSize: 16, color: "white" }}>E</div>
-          <div>
-            <div style={{ fontFamily: "Syne", fontWeight: 800, fontSize: 16, color: "#1a1a2e" }}>Even Procurement</div>
-            <div style={{ fontSize: 10, color: "#a0aec0", letterSpacing: 1, textTransform: "uppercase" }}>ESG Sourcing Platform</div>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <ThemePicker />
-          <button onClick={()=>navigate("/register")} style={{ padding: "9px 20px", background: "transparent", border: "1px solid #ff6b35", borderRadius: 8, color: "#ff6b35", cursor: "pointer", fontFamily: "Syne", fontWeight: 600, fontSize: 13 }}>Register</button>
-          <button onClick={()=>navigate("/")} style={{ padding: "9px 20px", background: "#ff6b35", border: "none", borderRadius: 8, color: "white", cursor: "pointer", fontFamily: "Syne", fontWeight: 600, fontSize: 13 }}>Sign In</button>
-        </div>
-      </header>
-
-      {/* Hero */}
-      <section style={{ paddingTop: 120, paddingBottom: 80, textAlign: "center", background: "linear-gradient(135deg, #fff7f4 0%, #ffffff 50%, #f0fdf4 100%)" }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 16px", background: "rgba(255,107,53,0.1)", borderRadius: 20, fontSize: 13, color: "#ff6b35", fontWeight: 600, marginBottom: 24 }}>
-          🇮🇳 India's First ESG-First Procurement Platform
-        </div>
-        <h1 style={{ fontFamily: "Syne", fontSize: 56, fontWeight: 800, lineHeight: 1.1, marginBottom: 24, color: "#1a1a2e", maxWidth: 700, margin: "0 auto 24px" }}>
-          Source with<br/>
-          <span style={{ color: "#ff6b35" }}>Purpose</span>. Measure<br/>
-          <span style={{ color: "#2ecc71" }}>Impact</span>.
-        </h1>
-        <p style={{ fontSize: 18, color: "#4a5568", maxWidth: 520, margin: "0 auto 40px", lineHeight: 1.7 }}>
-          Connect with verified women-led businesses, MSMEs, SHGs, and social enterprises. Every vendor ESG-scored. Every purchase SDG-aligned.
-        </p>
-        <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={()=>navigate("/register")} style={{ padding: "16px 36px", background: "#ff6b35", border: "none", borderRadius: 12, color: "white", cursor: "pointer", fontFamily: "Syne", fontWeight: 700, fontSize: 16, boxShadow: "0 8px 28px rgba(255,107,53,0.35)" }}>
-            Start as Vendor →
-          </button>
-          <button onClick={()=>navigate("/register")} style={{ padding: "16px 36px", background: "transparent", border: "2px solid #2ecc71", borderRadius: 12, color: "#1a1a2e", cursor: "pointer", fontFamily: "Syne", fontWeight: 700, fontSize: 16 }}>
-            Source as Buyer →
-          </button>
-        </div>
-      </section>
-
-      {/* Stats */}
-      <section style={{ padding: "48px 48px", background: "#ff6b35" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 32 }}>
-          {STATS.map(s => (
-            <div key={s.label} style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>{s.icon}</div>
-              <div style={{ fontFamily: "Syne", fontWeight: 800, fontSize: 32, color: "white" }}>{s.value}</div>
-              <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginTop: 4 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Features */}
-      <section style={{ padding: "80px 48px", background: "#f7f9fc" }}>
-        <h2 style={{ fontFamily: "Syne", fontSize: 36, fontWeight: 800, textAlign: "center", marginBottom: 12 }}>Everything you need for impact procurement</h2>
-        <p style={{ textAlign: "center", color: "#4a5568", marginBottom: 56, fontSize: 16 }}>Built from the ground up for ESG-first sourcing</p>
-        <div style={{ maxWidth: 1000, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
-          {FEATURES.map(f => (
-            <div key={f.title} style={{ background: "white", borderRadius: 16, padding: 28, border: "1px solid rgba(255,107,53,0.1)", boxShadow: "0 4px 16px rgba(0,0,0,0.04)" }}>
-              <div style={{ fontSize: 32, marginBottom: 16 }}>{f.icon}</div>
-              <div style={{ fontFamily: "Syne", fontWeight: 700, fontSize: 17, marginBottom: 10 }}>{f.title}</div>
-              <div style={{ color: "#4a5568", fontSize: 14, lineHeight: 1.7 }}>{f.desc}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Categories */}
-      <section style={{ padding: "80px 48px", background: "white" }}>
-        <h2 style={{ fontFamily: "Syne", fontSize: 36, fontWeight: 800, textAlign: "center", marginBottom: 12 }}>10 procurement categories</h2>
-        <p style={{ textAlign: "center", color: "#4a5568", marginBottom: 48, fontSize: 16 }}>Controlled taxonomy shared across vendors and buyers for precise matching</p>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16 }}>
-          {CATEGORIES.map(c => (
-            <div key={c.name} style={{ textAlign: "center", padding: "24px 16px", background: "#f7f9fc", borderRadius: 12, border: "1px solid rgba(255,107,53,0.1)" }}>
-              <div style={{ fontSize: 28, marginBottom: 10 }}>{c.icon}</div>
-              <div style={{ fontFamily: "Syne", fontWeight: 600, fontSize: 13, color: "#1a1a2e", lineHeight: 1.3 }}>{c.name}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ESG Scoring */}
-      <section style={{ padding: "80px 48px", background: "#f7f9fc" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center" }}>
-          <div>
-            <div style={{ display: "inline-block", padding: "4px 14px", background: "rgba(52,211,153,0.1)", borderRadius: 20, fontSize: 13, color: "#27ae60", fontWeight: 600, marginBottom: 16 }}>ESG Scoring Framework</div>
-            <h2 style={{ fontFamily: "Syne", fontSize: 34, fontWeight: 800, marginBottom: 16, lineHeight: 1.2 }}>India's most rigorous vendor ESG scorecard</h2>
-            <p style={{ color: "#4a5568", fontSize: 15, lineHeight: 1.7, marginBottom: 24 }}>25-field assessment across Environmental (30%), Social (45%), and Governance (25%) pillars. Every score is auditable, explainable, and updated in real time.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {[["🌿 Environmental (30%)", "Carbon, renewables, packaging, waste"],["👩 Social (45%)", "Women employment, jobs, wages, training"],["🏛 Governance (25%)", "Ownership, compliance, transparency"]].map(([t,d])=>(
-                <div key={t} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                  <div style={{ fontFamily: "Syne", fontWeight: 600, fontSize: 14, minWidth: 180 }}>{t}</div>
-                  <div style={{ color: "#4a5568", fontSize: 13 }}>{d}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {ESG_BANDS.map(b => (
-              <div key={b.band} style={{ padding: "16px 20px", background: "white", borderRadius: 12, border: `2px solid ${b.color}30`, display: "flex", alignItems: "center", gap: 16 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 10, background: `${b.color}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <div style={{ fontFamily: "Syne", fontWeight: 800, fontSize: 14, color: b.color }}>{b.range}</div>
-                </div>
-                <div>
-                  <div style={{ fontFamily: "Syne", fontWeight: 700, color: b.color }}>{b.band}</div>
-                  <div style={{ fontSize: 13, color: "#4a5568" }}>{b.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section style={{ padding: "80px 48px", background: "#1a1a2e", textAlign: "center" }}>
-        <h2 style={{ fontFamily: "Syne", fontSize: 40, fontWeight: 800, color: "white", marginBottom: 16 }}>Ready to source with purpose?</h2>
-        <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 16, marginBottom: 40 }}>Join India's first ESG-first procurement platform. Free to get started.</p>
-        <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={()=>navigate("/register")} style={{ padding: "16px 40px", background: "#ff6b35", border: "none", borderRadius: 12, color: "white", cursor: "pointer", fontFamily: "Syne", fontWeight: 700, fontSize: 16, boxShadow: "0 8px 28px rgba(255,107,53,0.4)" }}>
-            Register Now — It's Free
-          </button>
-          <button onClick={()=>navigate("/")} style={{ padding: "16px 40px", background: "transparent", border: "2px solid rgba(255,255,255,0.3)", borderRadius: 12, color: "white", cursor: "pointer", fontFamily: "Syne", fontWeight: 700, fontSize: 16 }}>
-            Sign In
-          </button>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer style={{ padding: "32px 48px", background: "#0a0a14", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 28, height: 28, background: "#ff6b35", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Syne", fontWeight: 800, fontSize: 12, color: "white" }}>E</div>
-          <div style={{ fontFamily: "Syne", fontWeight: 700, color: "white", fontSize: 14 }}>Even Procurement</div>
-        </div>
-        <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>© 2026 Even Livelihoods Private Limited · contact@evencargo.in</div>
-        <div style={{ display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
-          <span style={{ cursor: "pointer" }}>Privacy Policy</span>
-          <span style={{ cursor: "pointer" }}>Terms of Service</span>
-          <span style={{ cursor: "pointer" }}>Contact</span>
-        </div>
-      </footer>
-    </div>
-  );
+  const navigate = useNavigate(); const { user } = useAuth();
+  const [services, setServices] = useState([]); const [offers, setOffers] = useState([]); const [offerIndex, setOfferIndex] = useState(0); const [loading, setLoading] = useState(true); const [loadError, setLoadError] = useState(false);
+  const [query, setQuery] = useState(""); const [suggestions, setSuggestions] = useState([]); const [searchOpen, setSearchOpen] = useState(false); const [suggestionLoading, setSuggestionLoading] = useState(false); const [activeSuggestion, setActiveSuggestion] = useState(-1); const [saved, setSaved] = useState(new Set());
+  const loadServices = () => { setLoading(true); setLoadError(false); Promise.all([marketplaceAPI.listServices({ page_size: 12, sort: "demand" }), marketplaceAPI.listServices({ page_size: 8, sort: "offers" })]).then(([catalogue, featured]) => { setServices(catalogue.data?.items || []); setOffers((featured.data?.items || []).filter(item => item.offer_active)); }).catch(() => setLoadError(true)).finally(() => setLoading(false)); };
+  useEffect(loadServices, []);
+  useEffect(() => { if (user?.role === "buyer") buyerAPI.saved().then(r => setSaved(new Set(r.data.filter(item => item.target_type === "service").map(item => item.target_id)))).catch(() => {}); }, [user]);
+  useEffect(() => { if (offers.length < 2) return; const timer = setInterval(() => setOfferIndex(index => (index + 1) % offers.length), 5000); return () => clearInterval(timer); }, [offers.length]);
+  useEffect(() => { if (query.trim().length < 2) { setSuggestions([]); setSuggestionLoading(false); return; } setSuggestionLoading(true); const timer = setTimeout(() => marketplaceAPI.suggestions(query.trim()).then(r => setSuggestions(r.data?.items || [])).catch(() => setSuggestions([])).finally(() => setSuggestionLoading(false)), 180); return () => clearTimeout(timer); }, [query]);
+  const featured = offers[offerIndex] || services[0];
+  const choices = query.trim().length < 2 ? RECOMMENDED.map(label => ({ label, subtitle: "Explore verified providers", type: "recommended", query: label })) : suggestions;
+  const find = (event, value = query) => { event?.preventDefault(); const clean = value.trim(); setSearchOpen(false); setActiveSuggestion(-1); navigate(clean ? `/search?q=${encodeURIComponent(clean)}` : "/search"); };
+  const searchKeyDown = event => { if (event.key === "Escape") { setSearchOpen(false); setActiveSuggestion(-1); return; } if (!searchOpen || !choices.length) return; if (event.key === "ArrowDown") { event.preventDefault(); setActiveSuggestion(value => (value + 1) % choices.length); } else if (event.key === "ArrowUp") { event.preventDefault(); setActiveSuggestion(value => value <= 0 ? choices.length - 1 : value - 1); } else if (event.key === "Enter" && activeSuggestion >= 0) { event.preventDefault(); find(null, choices[activeSuggestion].query); } };
+  useEffect(() => { const onKeyDown = event => { if (document.activeElement?.getAttribute("aria-label") === "Search services") searchKeyDown(event); }; window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown); }, [searchOpen, activeSuggestion, query, suggestions]);
+  useEffect(() => { document.querySelectorAll(".hero-suggestions button").forEach((button, index) => button.classList.toggle("active", index === activeSuggestion)); }, [activeSuggestion, searchOpen, choices.length]);
+  return <div className="market-page"><MarketplaceHeader /><main>
+    <section className="market-hero"><div className="hero-copy"><div className="hero-kicker"><span />India&apos;s responsible services marketplace</div><h1>Business services,<br /><em>ready when you are.</em></h1><p>Discover verified vendors, compare vendor-published rates and send a requirement—all from one marketplace.</p><div className="hero-search-wrap"><form className="hero-search" onSubmit={find}><span className="search-glyph">⌕</span><input value={query} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 120)} onChange={e => setQuery(e.target.value)} placeholder="What service does your business need?" aria-label="Search services" /><button type="submit">Find services</button></form>{searchOpen && <div className="hero-suggestions">{suggestionLoading ? <div className="suggestion-status"><i className="button-spinner dark" /> Finding services…</div> : query.trim().length < 2 ? <><div className="suggestion-label">Recommended searches</div>{RECOMMENDED.map(item => <button key={item} onMouseDown={() => find(null, item)}><span><b>{item}</b><small>Explore verified providers</small></span><em>recommended</em></button>)}</> : suggestions.length ? suggestions.map((item, index) => <button key={`${item.type}-${item.id}-${index}`} onMouseDown={() => find(null, item.query)}><span><b>{item.label}</b><small>{item.subtitle}</small></span><em>{item.type}</em></button>) : <div className="suggestion-status">No direct suggestion. Press Enter to search all services.</div>}</div>}</div><div className="hero-trust"><span>✓ Browse freely</span><span>✓ Verified providers</span><span>✓ Buyer account tools</span></div></div>
+      <div className="hero-art"><div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />{featured ? <div className="hero-card hero-card-main"><div className="mini-tag">{featured.offer_active ? `${featured.discount_percent}% OFF NOW` : "FEATURED SERVICE"}</div><div className="service-visual">{featured.image_url ? <img src={resolveMediaUrl(featured.image_url)} alt={`${featured.title} catalogue`} /> : <div className="catalogue-placeholder"><span>e</span><b>Image being prepared</b></div>}</div><div className="hero-service-meta"><small>{featured.category}</small><strong>{featured.title}</strong><span className="hero-service-price">{servicePrice(featured).current}{featured.unit && <em> · {featured.unit}</em>}</span></div><button onClick={() => navigate(`/services/${featured.id}`)}>View service</button></div> : <div className="hero-card hero-card-main"><strong>{loading ? "Loading services…" : "Tell us what you need"}</strong></div>}<div className="floating-pill pill-one"><span className="pulse" /> Public service discovery</div></div></section>
+    <section className="category-section"><div className="category-row">{CATEGORIES.map(item => <button key={item.label} onClick={() => navigate(item.key ? `/search?category=${encodeURIComponent(item.key)}` : "/search")}><span className={`category-icon tone-${item.tone}`}><SectorIcon iconKey={item.icon} size={30} /></span><span>{item.label}</span></button>)}</div></section>
+    <section className="services-section"><div className="section-heading"><div><span className="eyebrow-commerce">SERVICES FOR YOUR BUSINESS</span><h2>{user?.role === "buyer" ? `Welcome back, ${user.name?.split(" ")[0]}` : "Explore the marketplace"}</h2><p>Fresh services and vendor-published offers selected for discovery.</p></div><button onClick={() => navigate("/search")}>View all services →</button></div><div className="service-grid">{loading && [...Array(6)].map((_, i) => <div className="service-card skeleton" style={{ height: 430 }} key={i} />)}{!loading && services.map(service => <MarketplaceServiceCard service={service} key={service.id} saved={saved.has(service.id)} onSaved={value => setSaved(current => { const next = new Set(current); value ? next.add(service.id) : next.delete(service.id); return next; })} />)}</div>{!loading && loadError && <div className="market-empty"><strong>Services could not be loaded</strong><button onClick={loadServices}>Retry</button></div>}</section>
+    <section className="demand-section"><div className="demand-intro"><span className="eyebrow-commerce light">BUILT FOR PROCUREMENT</span><h2>Discovery that leads somewhere.</h2><p>Move from browsing to a structured RFP, compare quotes and continue the conversation with the matched vendor.</p></div><div className="demand-list">{[["01", "Browse services", "No account required", "search", "green"], ["02", "Create a requirement", "Save addresses and procurement details", "clipboard", "blue"], ["03", "Compare and message", "Review quotes and talk safely", "check", "orange"]].map(item => <div className="demand-flow" key={item[0]}><span className="demand-number">{item[0]}</span><span className={`demand-icon tone-${item[4]}`}><SectorIcon iconKey={item[3]} size={32} /></span><span className="demand-name">{item[1]}<small>{item[2]}</small></span></div>)}</div></section>
+    <section className="vendor-banner"><div><span>FOR SERVICE PROVIDERS</span><h2>Good work deserves<br />better business.</h2><p>Get help creating your profile, calculating ESG readiness and publishing a compelling service catalogue.</p><button onClick={() => navigate("/vendor/register")}>Build your vendor storefront →</button></div></section>
+  </main><footer className="market-footer"><MarketplaceLogo /><span>Responsible procurement, made practical.</span><span>© 2026 Even Procurement</span></footer></div>;
 }
